@@ -214,7 +214,9 @@ write_sources(){
     sudo mkdir -p $APT_DIR/apt.conf.d
     sudo mkdir -p /etc/apt/preferences.d
     sudo mkdir -p /etc/apt/trusted.gpg.d
-    sudo mkdir -p /etc/apt/sources.list.d/docker.list
+
+    echo "📂 创建必要文件..."
+    sudo touch -p /etc/apt/sources.list.d/docker.list
 
     echo "📝 写入新的源配置..."
     if [[ "$type" == "official" ]]; then
