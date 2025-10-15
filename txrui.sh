@@ -1,61 +1,86 @@
 #!/bin/bash
+#==============================================
+# 田小瑞一键脚本 v1.3 - 手动空格对齐版
+#==============================================
 
-# ----------- 虚拟内存管理函数 -----------
-set_swap() {
-  local size=$1
-  local swapfile="/swapfile"
+# ---------- 公共函数 ----------
+ok()    { echo -e "\033[32m[✔] $1\033[0m"; }
+warn()  { echo -e "\033[33m[!] $1\033[0m"; }
+error() { echo -e "\033[31m[✘] $1\033[0m"; }
 
-  echo "正在设置虚拟内存为 $size..."
-
-  sudo swapoff -a
-  sudo rm -f $swapfile
-  sudo fallocate -l $size $swapfile
-  sudo chmod 600 $swapfile
-  sudo mkswap $swapfile
-  sudo swapon $swapfile
-
-  echo "虚拟内存已设置为 $size"
-}
-
-delete_swap() {
-  echo "正在删除虚拟内存..."
-
-  sudo swapoff -a
-  sudo rm -f /swapfile
-
-  echo "虚拟内存已删除"
-}
-
-manage_swap() {
+# ---------- 虚拟内存管理 ----------
+manage_swap_menu() {
   while true; do
-    echo "虚拟内存管理"
-    echo "1) 设定虚拟内存1GB"
-    echo "2) 设定虚拟内存2GB"
-    echo "3) 设定虚拟内存4GB"
-    echo "4) 自定义设定虚拟内存"
-    echo "5) 删除虚拟内存"
+    clear
+    echo "====== 虚拟内存管理 ======"
+    echo "1) 查看当前虚拟内存"
+    echo "2) 添加 1G 虚拟内存"
+    echo "3) 添加 2G 虚拟内存"
+    echo "4) 添加 4G 虚拟内存"
+    echo "5) 添加 8G 虚拟内存"
+    echo "6) 删除虚拟内存"
+    echo "7) 开机自动挂载设置"
+    echo "8) 自定义添加虚拟内存"
     echo "0) 返回主菜单"
+    echo "========================="
+    read -rp "请选择: " opt
 
-    read -rp "请输入选项: " swap_choice
-
-    case $swap_choice in
-      1) set_swap 1G ;;
-      2) set_swap 2G ;;
-      3) set_swap 4G ;;
-      4) 
-        read -rp "请输入虚拟内存大小（例如512M, 3G）: " custom_size
-        set_swap "$custom_size"
-        ;;
-      5) delete_swap ;;
-      0) break ;;
-      *) echo "无效选项" ;;
+    case "$opt" in
+      1)
+        echo ""
+        swapon --show || echo "无激活的交换空间"
+        echo ""
+        read -rp "按回车返回..." ;;
+      2) add_swap 1G ;;
+      3) add_swap 2G ;;
+      4) add_swap 4G ;;
+      5) add_swap 8G ;;
+      6)
+        swapoff /swapfile 2>/dev/null
+        rm -f /swapfile
+        sed -i '/\/swapfile/d' /etc/fstab
+        ok "已删除虚拟内存"
+        read -rp "按回车返回..." ;;
+      7)
+        grep -q '/swapfile' /etc/fstab && ok "已设置自动挂载" || warn "未检测到自动挂载"
+        read -rp "按回车返回..." ;;
+      8)
+        read -rp "请输入虚拟内存大小（如 512M 或 3G）: " custom_size
+        if [[ ! $custom_size =~ ^[0-9]+[MmGg]$ ]]; then
+          error "输入格式错误，请输入如 512M 或 2G"
+          sleep 1
+        else
+          add_swap "$custom_size"
+        fi ;;
+      0) return ;;
+      *) warn "无效选项"; sleep 1 ;;
     esac
   done
 }
 
-# ----------- 镜像源管理函数 -----------
-# Debian apt源管理脚本相关代码开始
+# ---------- 添加虚拟内存函数 ----------
+add_swap() {
+  size="$1"
+  if [ -f /swapfile ]; then
+    warn "检测到已有 swapfile，请先删除再添加"
+    read -rp "按回车返回..."
+    return
+  fi
 
+  echo "正在创建 ${size} 虚拟内存..."
+  fallocate -l "$size" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( ${size//[!0-9]/} * (${size,,} =~ g ? 1024 : 1) )) status=progress
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  if ! grep -q '/swapfile' /etc/fstab; then
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  fi
+  ok "已成功添加 ${size} 虚拟内存并启用"
+  read -rp "按回车返回..."
+}
+
+# ---------- 镜像源管理 ----------
+# Debian apt源管理脚本
 set -e
 
 APT_DIR="/etc/apt"
@@ -89,9 +114,6 @@ deb-src http://deb.debian.org/debian bullseye-updates main contrib non-free
 
 deb http://security.debian.org/debian-security bullseye-security main contrib non-free
 deb-src http://security.debian.org/debian-security bullseye-security main contrib non-free
-
-# deb http://deb.debian.org/debian bullseye-backports main contrib non-free
-# deb-src http://deb.debian.org/debian bullseye-backports main contrib non-free
 EOF
     elif [[ "$ver" == "12" ]]; then
         cat <<EOF
@@ -103,9 +125,6 @@ deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free
 
 deb http://security.debian.org/debian-security bookworm-security main contrib non-free
 deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free
-
-# deb http://deb.debian.org/debian bookworm-backports main contrib non-free
-# deb-src http://deb.debian.org/debian bookworm-backports main contrib non-free
 EOF
     else
         echo ""
@@ -124,9 +143,6 @@ deb-src http://mirrors.aliyun.com/debian/ bullseye-updates main contrib non-free
 
 deb http://mirrors.aliyun.com/debian-security bullseye-security main contrib non-free
 deb-src http://mirrors.aliyun.com/debian-security bullseye-security main contrib non-free
-
-# deb http://mirrors.aliyun.com/debian/ bullseye-backports main contrib non-free
-# deb-src http://mirrors.aliyun.com/debian/ bullseye-backports main contrib non-free
 EOF
     elif [[ "$ver" == "12" ]]; then
         cat <<EOF
@@ -138,9 +154,6 @@ deb-src http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free
 
 deb http://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free
 deb-src http://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free
-
-# deb http://mirrors.aliyun.com/debian/ bookworm-backports main contrib non-free
-# deb-src http://mirrors.aliyun.com/debian/ bookworm-backports main contrib non-free
 EOF
     else
         echo ""
@@ -179,13 +192,7 @@ restore_backup(){
 
 import_common_gpg_keys(){
     sudo mkdir -p /etc/apt/trusted.gpg.d
-    local keys=(
-        0E98404D386FA1D9
-        6ED0E7B82643E131
-        605C66F00D6C9793
-        54404762BBB6E853
-        BDE6D2B9216EC7A8
-    )
+    local keys=( 0E98404D386FA1D9 6ED0E7B82643E131 605C66F00D6C9793 54404762BBB6E853 BDE6D2B9216EC7A8 )
     for key in "${keys[@]}"; do
         echo "🔑 导入公钥: $key"
         tmpdir=$(mktemp -d)
@@ -199,10 +206,6 @@ import_common_gpg_keys(){
     done
 }
 
-check_missing_keys(){
-    import_common_gpg_keys
-}
-
 write_sources(){
     local ver=$1
     local type=$2
@@ -211,12 +214,7 @@ write_sources(){
     sudo rm -rf $APT_DIR
 
     echo "📂 创建必要目录..."
-    sudo mkdir -p $APT_DIR/apt.conf.d
-    sudo mkdir -p /etc/apt/preferences.d
-    sudo mkdir -p /etc/apt/trusted.gpg.d
-
-    echo "📂 创建必要文件..."
-    sudo touch /etc/apt/sources.list.d/docker.list
+    sudo mkdir -p $APT_DIR/apt.conf.d /etc/apt/preferences.d /etc/apt/trusted.gpg.d
 
     echo "📝 写入新的源配置..."
     if [[ "$type" == "official" ]]; then
@@ -232,134 +230,287 @@ write_sources(){
     echo 'Acquire::Retries "3";' | sudo tee -a $APT_DIR/apt.conf.d/99custom >/dev/null
 
     echo "🔧 导入常用 GPG 公钥..."
-    check_missing_keys
+    import_common_gpg_keys
 
     echo "🔄 运行最终更新..."
     sudo apt-get update && sudo apt update
 
     echo "🎉 源更新成功！"
 }
-
-manage_sources() {
+# ------------ 镜像源菜单 -----------------
+manage_sources_menu() {
   while true; do
     clear
-    echo "=================================="
-    echo "      Debian apt源管理"
-    echo "=================================="
+    echo "========================================"
+    echo "           Debian apt源管理"
+    echo "========================================"
     debver=$(get_debian_version)
     if [[ -z "$debver" ]]; then
-      echo "❌ 无法检测到 Debian 版本，脚本仅支持 Debian 11 和 12"
+      echo "❌ 无法检测到 Debian 版本，仅支持 Debian 11 和 12"
       read -p "按回车返回主菜单..."
       break
-    else
-      echo "📦 当前系统：Debian $debver"
     fi
+    echo "📦 当前系统：Debian $debver"
     echo ""
     echo "请选择操作："
-    echo "1) 备份 /etc/apt"
-    echo "2) 恢复 /etc/apt 备份"
-    echo "3) 使用 官方源"
-    echo "4) 使用 阿里云源"
-    echo "5) 更新 APT 源"
-    echo "0) 返回主菜单"
-    echo "----------------------------------"
+    echo "1) 备份 /etc/apt         2) 恢复 /etc/apt 备份"
+    echo "3) 使用 官方源           4) 使用 阿里云源"
+    echo "5) 更新 APT 源          0) 返回主菜单"
+    echo "----------------------------------------"
     read -rp "请输入选项: " choice
 
     case $choice in
-      1)
-        backup_apt
-        read -p "按回车继续..."
-        ;;
-      2)
-        restore_backup && read -p "按回车继续..."
-        ;;
-      3)
-        ver=$(get_debian_version)
-        write_sources "$ver" official
-        read -p "按回车继续..."
-        ;;
-      4)
-        ver=$(get_debian_version)
-        write_sources "$ver" aliyun
-        read -p "按回车继续..."
-        ;;
-      5)
-        echo "🔄 正在更新 apt 源..."
-        sudo apt-get update && sudo apt update
-        echo "✅ 更新完成。"
-        read -p "按回车继续..."
-        ;;
-      0)
-        break
-        ;;
-      *)
-        echo "❗ 无效选项，请重新输入。"
-        read -p "按回车继续..."
-        ;;
+      1) backup_apt; read -p "按回车继续..." ;;
+      2) restore_backup && read -p "按回车继续..." ;;
+      3) write_sources "$debver" official; read -p "按回车继续..." ;;
+      4) write_sources "$debver" aliyun; read -p "按回车继续..." ;;
+      5) echo "🔄 正在更新 apt 源..."; sudo apt-get update && sudo apt update; echo "✅ 更新完成"; read -p "按回车继续..." ;;
+      0) break ;;
+      *) echo "❗ 无效选项，请重新输入"; read -p "按回车继续..." ;;
     esac
   done
 }
+
+# ---------- BBR 管理 ----------
 manage_bbr() {
-  echo "正在下载并运行 BBR 管理脚本..."
-  wget -N --no-check-certificate "https://github.000060000.xyz/tcpx.sh"
-  chmod +x tcpx.sh
-  ./tcpx.sh
-  read -p "按回车返回主菜单..."
-}
-
-optimize_bbr() {
-  echo "正在运行 BBR 优化脚本..."
-  bash <(curl -Ls https://github.com/lanziii/bbr-/releases/download/123/tools.sh)
-  read -p "按回车返回主菜单..."
-}
-
-streaming_test() {
-  echo "正在运行流媒体解锁测试..."
-  bash <(curl -L -s check.unlock.media) -M 4 -R 0
-  read -p "按回车返回主菜单..."
-}
-
-install_bt_panel() {
-  echo "正在安装宝塔面板..."
-  if [ -f /usr/bin/curl ]; then
-    curl -sSO https://download.bt.cn/install/install_panel.sh
-  else
-    wget -O install_panel.sh https://download.bt.cn/install/install_panel.sh
-  fi
-  bash install_panel.sh ed8484bec
-  read -p "按回车返回主菜单..."
-}
-
-install_dpanel() {
-  echo "正在安装 DPanel 面板..."
-  curl -sSL https://dpanel.cc/quick.sh -o quick.sh && sudo bash quick.sh
-  read -p "按回车返回主菜单..."
-}
-# --- 主菜单 ---
-while true; do
   clear
-  echo "田小瑞一键脚本 v1.1"
-  echo "====================="
-  echo "1) 虚拟内存管理"
-  echo "2) 镜像源管理"
-  echo "3) BBR管理"
-  echo "4) BBR优化"
-  echo "5) 流媒体测试"
-  echo "6) 安装宝塔面板"
-  echo "7) 安装DPanel面板"
-  echo "8) 退出"
-  echo "====================="
-  read -rp "请选择操作: " main_choice
-
-  case $main_choice in
-    1) manage_swap ;;
-    2) manage_sources ;;
-    3) manage_bbr ;;
-    4) optimize_bbr ;;
-    5) streaming_test ;;
-    6) install_bt_panel ;;
-    7) install_dpanel ;;
-    8) echo "退出脚本"; exit 0 ;;
-    *) echo "无效选项"; sleep 1 ;;
+  echo "====== BBR 管理 ======"
+  echo "1) 启用 BBR"
+  echo "2) 查看 BBR 状态"
+  echo "0) 返回主菜单"
+  echo "===================="
+  read -rp "请选择: " opt
+  case "$opt" in
+    1)
+      echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+      echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+      sysctl -p
+      ok "BBR 已启用"
+      read -rp "按回车返回..." ;;
+    2)
+      sysctl net.ipv4.tcp_congestion_control
+      read -rp "按回车返回..." ;;
+    0) return ;;
   esac
-done
+}
+
+# ---------- BBR 优化 ----------
+optimize_bbr() {
+  clear
+  echo "====== BBR 优化 ======"
+  echo "正在优化 TCP 参数..."
+  cat >> /etc/sysctl.conf <<EOF
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_rmem='4096 87380 67108864'
+net.ipv4.tcp_wmem='4096 65536 67108864'
+EOF
+  sysctl -p
+  ok "优化完成"
+  read -rp "按回车返回..."
+}
+
+# ---------- 流媒体测试 ----------
+streaming_test() {
+  clear
+  echo "====== 流媒体测试 ======"
+  bash <(curl -sSL https://github.com/lmc999/RegionRestrictionCheck/raw/main/check.sh)
+  read -rp "按回车返回..."
+}
+
+# ---------- 安装宝塔 ----------
+install_bt_panel() {
+  clear
+  echo "====== 安装宝塔面板 ======"
+  wget -O install.sh http://download.bt.cn/install/install-ubuntu_6.0.sh
+  bash install.sh
+  read -rp "按回车返回..."
+}
+
+# ---------- 安装 DPanel ----------
+install_dpanel() {
+  clear
+  echo "====== 安装 DPanel 面板 ======"
+  bash <(curl -sSL https://raw.githubusercontent.com/Dpanel-Server/DPanel/master/install.sh)
+  read -rp "按回车返回..."
+}
+
+# ---------- 系统信息 ----------
+system_info() {
+  clear
+  echo "====== 系统详细信息 ======"
+
+  # 基本信息
+  echo "主机名: $(hostname)"
+  echo "系统版本: $(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"')"
+  echo "内核版本: $(uname -r)"
+  echo "CPU 架构: $(uname -m)"
+  echo "CPU 信息: $(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ *//')"
+  echo "CPU 核心: $(nproc)"
+
+  # 内存信息（用 MB/GB 显示）
+  mem_used=$(free -m | awk '/Mem:/ {printf "%.1f", $3/1024}')
+  mem_total=$(free -m | awk '/Mem:/ {printf "%.1f", $2/1024}')
+  echo "内存使用: ${mem_used}GB / ${mem_total}GB"
+
+  # 磁盘使用
+  disk_used=$(df -h / | awk 'NR==2 {print $3}')
+  disk_total=$(df -h / | awk 'NR==2 {print $2}')
+  echo "磁盘使用: ${disk_used} / ${disk_total}"
+
+  # ---------------- 交换空间 ----------------
+	swap_used_mb=$(free -m | awk '/^Swap:/{print $3}')
+	swap_total_mb=$(free -m | awk '/^Swap:/{print $2}')
+
+	if [[ $swap_total_mb -eq 0 ]]; then
+    echo "交换空间: 未启用"
+	else
+    if [[ $swap_total_mb -ge 1024 ]]; then
+        swap_used=$(awk "BEGIN {printf \"%.1fG\", $swap_used_mb/1024}")
+        swap_total=$(awk "BEGIN {printf \"%.1fG\", $swap_total_mb/1024}")
+    else
+        swap_used="${swap_used_mb}M"
+        swap_total="${swap_total_mb}M"
+    fi
+    echo "交换空间: $swap_used / $swap_total"
+	fi
+
+  # 系统运行时间（中文显示）
+  uptime_sec=$(awk '{print int($1)}' /proc/uptime)
+  days=$((uptime_sec / 86400))
+  hours=$(( (uptime_sec % 86400) / 3600 ))
+  mins=$(( (uptime_sec % 3600) / 60 ))
+
+  uptime_str="已运行 "
+  ((days > 0)) && uptime_str+="${days}天 "
+  ((hours > 0)) && uptime_str+="${hours}小时 "
+  ((mins > 0)) && uptime_str+="${mins}分钟"
+  echo "系统运行时间: $uptime_str"
+
+  # 系统负载
+  echo "系统负载: $(uptime | awk -F'load average:' '{print $2}')"
+
+  # 公网 IP
+  echo "公网 IP:"
+  ips=$(get_public_ips)
+  if [[ -z "$ips" ]]; then
+    echo "无法获取公网 IP 或无公网接口"
+  else
+    echo "$ips"
+  fi
+
+  echo "====================="
+  read -rp "按回车继续..."
+}
+# 获取公网 IPv4/IPv6 干净列表
+get_public_ips() {
+  local ipv4_sources=( "https://ipv4.ip.sb/ip" "https://ifconfig.me/ip" "https://api.ipify.org" "https://ipinfo.io/ip" "https://ident.me" )
+  local ipv6_sources=( "https://ipv6.ip.sb/ip" "https://ifconfig.co/ip" "https://api64.ipify.org" )
+
+  local -a ipv4_list ipv6_list
+  local ip
+
+  # IPv4
+  for url in "${ipv4_sources[@]}"; do
+    ip="$(curl -4 -s --max-time 3 "$url" 2>/dev/null || true)"
+    ip="${ip%%[[:space:]]*}"
+    if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      ipv4_list+=("$ip")
+    fi
+  done
+
+  # IPv6
+  for url in "${ipv6_sources[@]}"; do
+    ip="$(curl -6 -s --max-time 3 "$url" 2>/dev/null || true)"
+    ip="${ip%%[[:space:]]*}"
+    if [[ $ip =~ ^[0-9a-fA-F:]+$ ]] && [[ ${#ip} -ge 5 ]]; then
+      ipv6_list+=("$ip")
+    fi
+  done
+
+  # 输出去重
+  printf "%s\n" "${ipv4_list[@]}" "${ipv6_list[@]}" | sed '/^$/d' | sort -u
+}
+
+# ---------- 一键清理 ----------
+clean_system() {
+  clear
+  echo "====== 一键清理 ======"
+  apt autoremove -y
+  apt autoclean -y
+  journalctl --vacuum-time=3d
+  ok "系统日志与缓存已清理"
+  read -rp "按回车返回..."
+}
+
+# ---------- 主菜单 ----------
+main_menu() {
+while true; do
+    clear
+    # 获取系统版本信息，只显示类似 "Ubuntu 22.04.5 LTS"
+    if [[ -f /etc/os-release ]]; then
+      OS_VERSION=$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    else
+      OS_VERSION="未知系统"
+    fi
+
+    # CPU核心数
+    if command -v lscpu >/dev/null 2>&1; then
+      CPU_CORES=$(lscpu | awk -F: '/^CPU\(s\)/{print $2}' | xargs)
+    else
+      CPU_CORES=$(grep -c ^processor /proc/cpuinfo)
+    fi
+
+    MEM_TOTAL_MB=$(free -m | awk '/^Mem:/{print $2}')
+	if [[ $MEM_TOTAL_MB -ge 1024 ]]; then
+    MEM_TOTAL=$(awk "BEGIN {printf \"%.1fG\", $MEM_TOTAL_MB/1024}")
+	else
+    MEM_TOTAL="${MEM_TOTAL_MB}M"
+	fi
+
+	# 获取虚拟内存总量
+	SWAP_TOTAL_MB=$(free -m | awk '/^Swap:/{print $2}')
+	if [[ $SWAP_TOTAL_MB -ge 1024 ]]; then
+    SWAP_TOTAL=$(awk "BEGIN {printf \"%.1fG\", $SWAP_TOTAL_MB/1024}")
+	else
+    SWAP_TOTAL="${SWAP_TOTAL_MB}M"
+	fi
+
+    # 根分区存储
+    if command -v df >/dev/null 2>&1; then
+      DISK_TOTAL=$(df -h / | awk 'NR==2{print $2}')
+    else
+      DISK_TOTAL="未知"
+    fi
+    
+    echo "==============================================="
+    echo "      田小瑞一键脚本 V1.0"
+    echo "      操作系统：($OS_VERSION)"
+    echo -e "      $CPU_CORES核  $MEM_TOTAL内存  $DISK_TOTAL存储  $SWAP_TOTAL虚拟内存"
+    echo "==============================================="
+    echo "1) 虚拟内存管理           2) 镜像源管理"
+    echo "3) BBR 管理               4) BBR 优化"
+    echo "5) 流媒体测试             6) 安装宝塔面板"
+    echo "7) 安装 DPanel 面板       8) 服务器详细信息"
+    echo "9) 一键清理日志和缓存"    
+    echo "0) 退出"
+    echo "==============================================="
+    read -rp "请选择: " choice
+    case "$choice" in
+      1) manage_swap_menu ;;
+      2) manage_sources_menu ;;
+      3) manage_bbr ;;
+      4) optimize_bbr ;;
+      5) streaming_test ;;
+      6) install_bt_panel ;;
+      7) install_dpanel ;;
+      8) system_info ;;
+      9) clean_system ;;
+      0) ok "退出脚本"; exit 0 ;;
+      *) warn "无效选项"; sleep 1 ;;
+    esac
+  done
+}
+
+main_menu
