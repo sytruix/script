@@ -444,6 +444,242 @@ clean_system() {
   read -rp "按回车返回..."
 }
 
+# 一键开启/关闭服务器防火墙
+manage_firewall() {
+  while true; do
+    clear
+    echo "=================================="
+    echo "         防火墙管理"
+
+    # 检测可用防火墙
+    if command -v ufw >/dev/null 2>&1; then
+      fw_type="ufw"
+      fw_name="UFW"
+      fw_status=$(sudo ufw status | grep -i "Status" | awk '{print $2}')
+      case "$fw_status" in
+        inactive) status_text="未开启" ;;
+        active) status_text="已开启" ;;
+        *) status_text="未知状态" ;;
+      esac
+    elif command -v firewall-cmd >/dev/null 2>&1; then
+      fw_type="firewalld"
+      fw_name="Firewalld"
+      if systemctl is-active --quiet firewalld; then
+        status_text="已开启"
+      else
+        status_text="未开启"
+      fi
+    elif command -v iptables >/dev/null 2>&1; then
+      fw_type="iptables"
+      fw_name="iptables"
+      status_text="请手动管理规则"
+    else
+      fw_type="none"
+      fw_name="未安装防火墙"
+      status_text="未安装"
+    fi
+
+    # 显示防火墙状态
+    echo "防火墙类型: $fw_name  状态: $status_text"
+    echo "=================================="
+
+    echo "1) 开启防火墙 (永久生效)"
+    echo "2) 关闭防火墙 (永久生效)"
+    echo "3) 临时关闭防火墙 (不改变开机自启)"
+    echo "4) 重启防火墙"
+    echo "0) 返回上级菜单"
+    read -rp "请输入选项: " choice
+
+    case $choice in
+      1)
+        case $fw_type in
+          ufw)
+            sudo ufw enable
+            sudo systemctl enable ufw
+            ;;
+          firewalld)
+            sudo systemctl start firewalld
+            sudo systemctl enable firewalld
+            ;;
+          iptables)
+            echo "⚠ iptables 需自行添加规则并保存"
+            ;;
+          *)
+            echo "❌ 未安装防火墙"
+            ;;
+        esac
+        echo "✅ 防火墙已开启（永久）"
+        read -p "按回车继续..."
+        ;;
+      2)
+        case $fw_type in
+          ufw)
+            sudo ufw disable
+            sudo systemctl disable ufw
+            ;;
+          firewalld)
+            sudo systemctl stop firewalld
+            sudo systemctl disable firewalld
+            ;;
+          iptables)
+            echo "⚠ iptables 需自行清空规则并禁用自启"
+            ;;
+          *)
+            echo "❌ 未安装防火墙"
+            ;;
+        esac
+        echo "✅ 防火墙已关闭（永久）"
+        read -p "按回车继续..."
+        ;;
+      3)
+        case $fw_type in
+          ufw)
+            sudo ufw disable
+            echo "⚠ 防火墙已临时关闭 (开机仍可能启动)"
+            ;;
+          firewalld)
+            sudo systemctl stop firewalld
+            echo "⚠ 防火墙已临时关闭 (开机仍可能启动)"
+            ;;
+          iptables)
+            echo "⚠ iptables 需手动清空规则"
+            ;;
+          *)
+            echo "❌ 未安装防火墙"
+            ;;
+        esac
+        read -p "按回车继续..."
+        ;;
+      4)
+        case $fw_type in
+          ufw)
+            sudo ufw disable
+            sudo ufw enable
+            ;;
+          firewalld)
+            sudo systemctl restart firewalld
+            ;;
+          iptables)
+            echo "⚠ iptables 需手动重启规则"
+            ;;
+          *)
+            echo "❌ 未安装防火墙"
+            ;;
+        esac
+        echo "🔄 防火墙已重启"
+        read -p "按回车继续..."
+        ;;
+      0)
+        break
+        ;;
+      *)
+        echo "❗ 无效选项"
+        read -p "按回车继续..."
+        ;;
+    esac
+  done
+}
+
+#修改系统时区
+change_timezone() {
+  while true; do
+    clear
+    current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
+    echo "=================================="
+    echo "        系统时区管理"
+    echo "        当前时区: $current_tz"
+    echo "=================================="
+    echo "1) 中国 (Asia/Shanghai)"
+    echo "2) 日本 (Asia/Tokyo)"
+    echo "3) 俄罗斯 (Europe/Moscow)"
+    echo "4) 美国 (America/New_York)"
+    echo "5) 香港 (Asia/Hong_Kong)"
+    echo "6) 自定义时区"
+    echo "0) 返回上级菜单"
+    read -rp "请选择时区: " choice
+
+    case $choice in
+      1) tz="Asia/Shanghai" ;;
+      2) tz="Asia/Tokyo" ;;
+      3) tz="Europe/Moscow" ;;
+      4) tz="America/New_York" ;;
+      5) tz="Asia/Hong_Kong" ;;
+      6)
+        read -rp "请输入自定义时区 (如 Europe/London): " tz
+        if ! timedatectl list-timezones | grep -q "^$tz$"; then
+          echo "❌ 时区无效"
+          read -p "按回车继续..."
+          continue
+        fi
+        ;;
+      0) return ;;
+      *) echo "❌ 无效选项"; read -p "按回车继续..." ; continue ;;
+    esac
+
+    sudo timedatectl set-timezone "$tz"
+    echo "✅ 时区已修改为 $tz"
+    read -p "按回车继续..."
+    break
+  done
+}
+
+#修改主机名
+change_hostname() {
+  current_hostname=$(hostname)
+  echo "当前主机名: $current_hostname"
+  read -rp "请输入新的主机名: " new_hostname
+  if [ -n "$new_hostname" ]; then
+    sudo hostnamectl set-hostname "$new_hostname"
+    echo "✅ 主机名已修改为 $new_hostname"
+    echo "请重启或重新登录以使更改生效"
+  else
+    echo "❌ 主机名不能为空"
+  fi
+  read -p "按回车继续..."
+}
+#修改 /etc/hosts
+edit_hosts() {
+  echo "⚠️ 正在编辑 /etc/hosts 文件，请确保格式正确"
+  sudo nano /etc/hosts
+}
+#切换系统语言
+change_language() {
+  while true; do
+    clear
+    current_lang=$(locale | grep LANG= | cut -d= -f2)
+    echo "=================================="
+    echo "        系统语言管理"
+    echo "        当前语言: $current_lang"
+    echo "=================================="
+    echo "1) 中文 (zh_CN.UTF-8)"
+    echo "2) 英文 (en_US.UTF-8)"
+    echo "3) 自定义语言"
+    echo "0) 返回上级菜单"
+    read -rp "请选择语言: " choice
+
+    case $choice in
+      1) lang="zh_CN.UTF-8" ;;
+      2) lang="en_US.UTF-8" ;;
+      3)
+        read -rp "请输入自定义语言 (如 zh_HK.UTF-8): " lang
+        if ! locale -a | grep -q "^$lang$"; then
+          echo "❌ 语言无效或未安装"
+          read -p "按回车继续..."
+          continue
+        fi
+        ;;
+      0) return ;;
+      *) echo "❌ 无效选项"; read -p "按回车继续..." ; continue ;;
+    esac
+
+    sudo update-locale LANG="$lang"
+    echo "✅ 系统语言已修改为 $lang"
+    echo "请重启或重新登录以使更改生效"
+    read -p "按回车继续..."
+    break
+  done
+}
+
 # ---------- 主菜单 ----------
 main_menu() {
 while true; do
@@ -493,7 +729,8 @@ while true; do
     echo "3) BBR 管理               4) BBR 优化"
     echo "5) 流媒体测试             6) 安装宝塔面板"
     echo "7) 安装 DPanel 面板       8) 服务器详细信息"
-    echo "9) 一键清理日志和缓存"    
+    echo "9) 一键清理日志和缓存"
+    echo "10) 系统管理"    
     echo "0) 退出"
     echo "==============================================="
     read -rp "请选择: " choice
@@ -507,6 +744,30 @@ while true; do
       7) install_dpanel ;;
       8) system_info ;;
       9) clean_system ;;
+      10)
+  while true; do
+    clear
+    echo "=================================="
+    echo "         系统管理"
+    echo "=================================="
+    echo "1) 防火墙管理"
+    echo "2) 修改系统时区"
+    echo "3) 修改主机名"
+    echo "4) 修改 Host"
+    echo "5) 切换系统语言"
+    echo "0) 返回主菜单"
+    read -rp "请输入选项: " sys_choice
+    case $sys_choice in
+      1) manage_firewall ;;
+      2) change_timezone ;;
+      3) change_hostname ;;
+      4) edit_hosts ;;
+      5) change_language ;;
+      0) break ;;
+      *) echo "❗ 无效选项"; read -p "按回车继续..." ;;
+    esac
+  done
+  ;;
       0) ok "退出脚本"; exit 0 ;;
       *) warn "无效选项"; sleep 1 ;;
     esac
