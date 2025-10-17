@@ -36,11 +36,41 @@ manage_swap_menu() {
       4) add_swap 4G ;;
       5) add_swap 8G ;;
       6)
+    # 删除 /swapfile（用户自建 swap 文件）
+    if [ -f /swapfile ]; then
         swapoff /swapfile 2>/dev/null
         rm -f /swapfile
         sed -i '/\/swapfile/d' /etc/fstab
-        ok "已删除虚拟内存"
-        read -rp "按回车返回..." ;;
+        ok "已删除 /swapfile 虚拟内存"
+    fi
+
+    # 查找并处理系统默认 swap 分区或 swap 文件
+    swapon --show=NAME --noheadings | while read -r swapdev; do
+        swapoff "$swapdev" 2>/dev/null
+        # 如果是文件，直接删除
+        if [ -f "$swapdev" ]; then
+            rm -f "$swapdev"
+            ok "已删除 swap 文件: $swapdev"
+        fi
+        # 如果是分区，提示用户是否删除
+        if [[ "$swapdev" =~ ^/dev/ ]]; then
+            read -rp "检测到 swap 分区 $swapdev。是否删除该分区? [y/N]: " yn
+            yn=${yn:-y}  # 默认回车自动删除
+            if [[ "$yn" =~ ^[Yy]$ ]]; then
+                # 删除分区（用 sfdisk 清空分区表）
+                echo "正在删除分区 $swapdev ..."
+                parted "$swapdev" rm 1 >/dev/null 2>&1
+                ok "已删除 swap 分区 $swapdev"
+            else
+                ok "保留 swap 分区 $swapdev"
+            fi
+        fi
+        # 清理 /etc/fstab 中对应 swap 行
+        sed -i "\|$swapdev|d" /etc/fstab
+    done
+
+    read -rp "按回车返回..." ;;
+
       7)
         grep -q '/swapfile' /etc/fstab && ok "已设置自动挂载" || warn "未检测到自动挂载"
         read -rp "按回车返回..." ;;
