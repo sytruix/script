@@ -98,7 +98,18 @@ add_swap() {
   fi
 
   echo "正在创建 ${size} 虚拟内存..."
-  fallocate -l "$size" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( ${size//[!0-9]/} * (${size,,} =~ g ? 1024 : 1) )) status=progress
+  # 尝试用 fallocate，不支持则用 dd
+if ! fallocate -l "$size" /swapfile 2>/dev/null; then
+    unit="${size: -1}"
+    num="${size%[GgMm]}"
+    if [[ $unit == "G" || $unit == "g" ]]; then
+        count=$((num*1024))
+    else
+        count=$num
+    fi
+    dd if=/dev/zero of=/swapfile bs=1M count=$count status=progress
+fi
+
   chmod 600 /swapfile
   mkswap /swapfile >/dev/null
   swapon /swapfile
