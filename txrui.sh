@@ -710,6 +710,142 @@ change_language() {
   done
 }
 
+# ---------- 安装 qBittorrent ----------
+install_qbittorrent() {
+    CONFIG_DIR="/root/.config/qBittorrent"
+    CONF_FILE="$CONFIG_DIR/qBittorrent.conf"
+
+    echo "==== 更新系统 ===="
+    apt update && apt upgrade -y
+    apt install -y software-properties-common wget nano curl gnupg lsb-release
+
+    echo "==== 安装 qBittorrent-nox ===="
+    if [ -f /etc/lsb-release ]; then
+        add-apt-repository ppa:qbittorrent-team/qbittorrent-stable -y
+        apt update
+    fi
+    apt install -y qbittorrent-nox
+
+    echo "==== 生成或修改配置文件 ===="
+    mkdir -p $CONFIG_DIR
+
+    # 判断是否已有配置文件
+    if [ -f "$CONF_FILE" ]; then
+        echo "已有配置文件，更新为完整自定义配置..."
+    else
+        echo "首次启动，生成配置文件..."
+        qbittorrent-nox &
+        sleep 5
+        kill $!
+    fi
+
+    # 写入完整配置
+    cat > $CONF_FILE <<'EOF'
+[AutoRun]
+OnTorrentAdded\Enabled=false
+OnTorrentAdded\Program=
+enabled=false
+program=
+
+[BitTorrent]
+Session\AddExtensionToIncompleteFiles=true
+Session\ExcludedFileNames=
+Session\MaxConnections=-1
+Session\MaxConnectionsPerTorrent=-1
+Session\MaxUploads=-1
+Session\MaxUploadsPerTorrent=-1
+Session\Port=51234
+Session\Preallocation=true
+Session\QueueingSystemEnabled=false
+
+[Core]
+AutoDeleteAddedTorrentFile=Never
+
+[LegalNotice]
+Accepted=true
+
+[Meta]
+MigrationVersion=4
+
+[Network]
+Proxy\OnlyForTorrents=false
+
+[Preferences]
+Advanced\RecheckOnCompletion=false
+Advanced\trackerPort=9000
+Advanced\trackerPortForwarding=false
+Connection\ResolvePeerCountries=true
+DynDNS\DomainName=changeme.dyndns.org
+DynDNS\Enabled=false
+DynDNS\Password=
+DynDNS\Service=DynDNS
+DynDNS\Username=
+General\Locale=zh_CN
+MailNotification\email=
+MailNotification\enabled=false
+MailNotification\password=
+MailNotification\req_auth=true
+MailNotification\req_ssl=false
+MailNotification\sender=qBittorrent_notification@example.com
+MailNotification\smtp_server=smtp.changeme.com
+MailNotification\username=
+WebUI\Address=*
+WebUI\AlternativeUIEnabled=false
+WebUI\AuthSubnetWhitelist=@Invalid()
+WebUI\AuthSubnetWhitelistEnabled=false
+WebUI\BanDuration=3600
+WebUI\CSRFProtection=false
+WebUI\ClickjackingProtection=false
+WebUI\CustomHTTPHeaders=
+WebUI\CustomHTTPHeadersEnabled=false
+WebUI\HTTPS\CertificatePath=
+WebUI\HTTPS\Enabled=false
+WebUI\HTTPS\KeyPath=
+WebUI\HostHeaderValidation=false
+WebUI\LocalHostAuth=true
+WebUI\MaxAuthenticationFailCount=5
+WebUI\Port=8080
+WebUI\ReverseProxySupportEnabled=false
+WebUI\RootFolder=
+WebUI\SecureCookie=true
+WebUI\ServerDomains=*
+WebUI\SessionTimeout=3600
+WebUI\TrustedReverseProxiesList=
+WebUI\UseUPnP=false
+WebUI\Username=admin
+
+[RSS]
+AutoDownloader\DownloadRepacks=true
+AutoDownloader\SmartEpisodeFilter=s(\\d+)e(\\d+), (\\d+)x(\\d+), "(\\d{4}[.\\-]\\d{1,2}[.\\-]\\d{1,2})", "(\\d{1,2}[.\\-]\\d{1,2}[.\\-]\\d{4})"
+EOF
+
+    echo "==== 创建 systemd 服务 ===="
+    SERVICE_FILE="/etc/systemd/system/qbittorrent.service"
+    cat > $SERVICE_FILE <<EOF
+[Unit]
+Description=qBittorrent-nox service
+After=network.target
+
+[Service]
+User=root
+ExecStart=/usr/bin/qbittorrent-nox
+Restart=on-failure
+LimitNOFILE=10240
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now qbittorrent
+
+    echo "==== 安装/更新完成 ===="
+    echo "WebUI 地址：http://$(curl -s ifconfig.me):8080"
+    echo "用户名：admin"
+    echo "密码：adminadmin"
+    echo "WebUI 已设置为中文，服务已配置开机自启。"
+}
+
 # ---------- 主菜单 ----------
 main_menu() {
 while true; do
@@ -797,6 +933,11 @@ while true; do
       *) echo "❗ 无效选项"; read -p "按回车继续..." ;;
     esac
   done
+  ;;
+  	 11)
+        echo "==== 开始安装/更新 qBittorrent-nox ===="
+        # 调用函数或直接插入完整脚本
+        install_qbittorrent
   ;;
       0) ok "退出脚本"; exit 0 ;;
       *) warn "无效选项"; sleep 1 ;;
