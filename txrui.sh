@@ -896,7 +896,8 @@ while true; do
     echo "5) 流媒体测试             6) 安装宝塔面板"
     echo "7) 安装 DPanel 面板       8) 服务器详细信息"
     echo "9) 一键清理日志和缓存"
-    echo "10) 系统管理"    
+    echo "10) 系统管理"
+	echo "11) 安装/更新 qBittorrent"
     echo "0) 退出"
     echo "==============================================="
     read -rp "请选择: " choice
