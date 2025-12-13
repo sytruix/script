@@ -1,3 +1,4 @@
+cat << 'EOF' > status_client.sh
 #!/bin/bash
 
 SERVER_IP="165.99.43.198"
@@ -73,3 +74,5 @@ while true; do
     esac
 done
 EOF
+
+chmod +x status_client.sh && ./status_client.sh
