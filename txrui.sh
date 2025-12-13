@@ -860,68 +860,65 @@ EOF
 # --- ServerStatus 客户端管理 (选项 12 增强版) ---
 manage_ss_client() {
     SERVER_IP="165.99.43.198"
-    CLIENT_PATH="$(pwd)/client-linux.py"
-    
+    CLIENT_PATH=$(pwd)/client-linux.py
+
     while true; do
-        clear
-        echo "==============================================="
-        echo "   ServerStatus 客户端管理 (ID前缀: s)"
-        echo "==============================================="
-        
-        # 实时检测状态并显示在菜单顶端
-        echo -e "🔍 当前状态检测："
-        if ps -ef | grep "client-linux.py" | grep -v grep > /dev/null; then
-            PID=$(ps -ef | grep "client-linux.py" | grep -v grep | awk '{print $2}')
-            USER_VAL=$(ps -ef | grep "client-linux.py" | grep -v grep | awk -F'USER=' '{print $2}' | awk '{print $1}')
-            echo -e "   进程状态: ${GREEN}● 正在运行${NC} (PID: $PID)"
-            echo -e "   当前节点: ${YELLOW}$USER_VAL${NC}"
-        else
-            echo -e "   进程状态: ${RED}○ 未运行${NC}"
-        fi
-        
-        if crontab -l 2>/dev/null | grep -q "client-linux.py"; then
-            echo -e "   开机自启: ${GREEN}已设置${NC}"
-        else
-            echo -e "   开机自启: ${RED}未设置${NC}"
-        fi
         echo "-----------------------------------------------"
-        echo "1) 安装/更新 客户端"
-        echo "2) 彻底卸载 客户端"
-        echo "3) 仅重启客户端"
-        echo "0) 返回主菜单"
-        echo "==============================================="
-        read -rp "请选择: " ss_choice
-        case "$ss_choice" in
+        echo "   ServerStatus 客户端管理工具 (ID前缀: s)"
+        echo "-----------------------------------------------"
+        echo "1. 安装/更新 客户端"
+        echo "2. 彻底卸载 客户端"
+        echo "3. 查看运行状态"
+        echo "0. 返回主菜单"
+        echo "-----------------------------------------------"
+        read -p "请选择操作 [0-3]: " ss_choice
+
+        case $ss_choice in
             1)
+                echo "示例：输入 05 则 ID 为 s05"
                 read -p "请输入 ID 数字部分 (默认 04): " USER_NUM
-                USER_ID="s${USER_NUM:-04}"
-                echo "正在安装/更新中..."
+                USER_NUM=${USER_NUM:-04}
+                USER_ID="s${USER_NUM}"
+
+                echo "正在下载脚本..."
                 wget --no-check-certificate -qO client-linux.py 'https://raw.githubusercontent.com/cppla/ServerStatus/master/clients/client-linux.py'
+                
+                echo "正在清理旧进程..."
                 pkill -f client-linux.py >/dev/null 2>&1
+
+                echo "正在启动客户端..."
                 nohup python3 "${CLIENT_PATH}" SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &
-                # 写入计划任务
+                
+                echo "正在设置开机自启..."
                 (crontab -l 2>/dev/null | grep -v "client-linux.py"; echo "@reboot /usr/bin/python3 ${CLIENT_PATH} SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &") | crontab -
-                ok "安装成功！最终连接 ID 为: ${USER_ID}"
-                read -p "按回车继续..." ;;
+                
+                echo -e "${GREEN}✅ 安装成功！最终 ID 为: ${USER_ID}${NC}"
+                ;;
             2)
+                echo "正在停止进程..."
                 pkill -f client-linux.py >/dev/null 2>&1
+                echo "正在移除开机自启..."
                 crontab -l 2>/dev/null | grep -v "client-linux.py" | crontab -
+                echo "正在删除脚本文件..."
                 rm -f client-linux.py
-                ok "已停止进程并清除自启配置。"
-                read -p "按回车继续..." ;;
+                echo -e "${GREEN}✅ 卸载完成！${NC}"
+                ;;
             3)
-                # 自动提取旧的 ID 并重启
-                OLD_USER=$(ps -ef | grep "client-linux.py" | grep -v grep | awk -F'USER=' '{print $2}' | awk '{print $1}')
-                if [ ! -z "$OLD_USER" ]; then
-                    pkill -f client-linux.py
-                    nohup python3 "${CLIENT_PATH}" SERVER=${SERVER_IP} USER=${OLD_USER} >/dev/null 2>&1 &
-                    ok "客户端已重启 (节点: $OLD_USER)"
+                echo "-----------------------------------------------"
+                echo "🔍 进程状态："
+                if ps -ef | grep "client-linux.py" | grep -v grep > /dev/null; then
+                    ps -ef | grep "client-linux.py" | grep -v grep
                 else
-                    error "未发现运行中的客户端，无法重启。"
+                    echo -e "${RED}❌ 客户端未在运行${NC}"
                 fi
-                read -p "按回车继续..." ;;
+                echo ""
+                echo "🔍 开机自启任务："
+                crontab -l | grep "client-linux.py" || echo -e "${RED}❌ 未发现自启任务${NC}"
+                echo "-----------------------------------------------"
+                read -p "按回车继续..."
+                ;;
             0) break ;;
-            *) warn "无效选项"; sleep 1 ;;
+            *) echo "无效选项" ;;
         esac
     done
 }
