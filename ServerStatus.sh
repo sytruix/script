@@ -1,4 +1,3 @@
-cat << 'EOF' > status_client.sh
 #!/bin/bash
 
 SERVER_IP="165.99.43.198"
@@ -73,3 +72,4 @@ while true; do
         *) echo "无效选项，请重新选择" ;;
     esac
 done
+EOF
