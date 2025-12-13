@@ -1,6 +1,6 @@
 #!/bin/bash
 #==============================================
-# 田小瑞一键脚本 v1.3 - 手动空格对齐版
+# 田小瑞一键脚本 v1.0.1 - 手动空格对齐版
 #==============================================
 
 # ---------- 公共函数 ----------
@@ -857,6 +857,106 @@ EOF
     echo "WebUI 已设置为中文，服务已配置开机自启。"
 }
 
+# --- ServerStatus 客户端管理 ---
+manage_ss_client() {
+    SERVER_IP="165.99.43.198"
+    CLIENT_PATH="$(pwd)/client-linux.py"
+    
+    while true; do
+        clear
+        echo "==============================================="
+        echo "   ServerStatus 客户端管理 (ID前缀: s)"
+        echo "==============================================="
+        echo "1) 安装/更新 客户端"
+        echo "2) 彻底卸载 客户端"
+        echo "3) 查看运行状态"
+        echo "0) 返回主菜单"
+        echo "==============================================="
+        read -rp "请选择: " ss_choice
+        case "$ss_choice" in
+            1)
+                read -p "请输入 ID 数字部分 (默认 04): " USER_NUM
+                USER_ID="s${USER_NUM:-04}"
+                echo "正在安装..."
+                wget --no-check-certificate -qO client-linux.py 'https://raw.githubusercontent.com/cppla/ServerStatus/master/clients/client-linux.py'
+                pkill -f client-linux.py >/dev/null 2>&1
+                nohup python3 "${CLIENT_PATH}" SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &
+                (crontab -l 2>/dev/null | grep -v "client-linux.py"; echo "@reboot /usr/bin/python3 ${CLIENT_PATH} SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &") | crontab -
+                echo "✅ 安装成功！最终 ID 为: ${USER_ID}"; read -p "按回车继续..." ;;
+            2)
+                pkill -f client-linux.py >/dev/null 2>&1
+                crontab -l 2>/dev/null | grep -v "client-linux.py" | crontab -
+                rm -f client-linux.py
+                echo "✅ 卸载完成！"; read -p "按回车继续..." ;;
+            3)
+                echo "🔍 进程状态："
+                ps -ef | grep "client-linux.py" | grep -v grep || echo "❌ 未在运行"
+                echo -e "\n🔍 自启任务："
+                crontab -l | grep "client-linux.py" || echo "❌ 无自启任务"
+                read -p "按回车继续..." ;;
+            0) break ;;
+            *) echo "❗ 无效选项"; sleep 1 ;;
+        esac
+    done
+}
+
+# --- ServerStatus 服务端管理 ---
+manage_ss_server() {
+    CONFIG_FILE="/opt/serverstatus/serverstatus-config.json"
+    [ ! -f "$CONFIG_FILE" ] && echo "❗ 未找到服务端配置文件" && read -p "按回车继续..." && return
+
+    restart_ss_docker() { docker restart serverstatus >/dev/null 2>&1; echo "🔄 容器已重启"; }
+
+    while true; do
+        clear
+        echo "==============================================="
+        echo "      ServerStatus 服务端全能管理"
+        echo "==============================================="
+        echo "1) 节点管理 (Servers)"
+        echo "2) 监控管理 (Monitors)"
+        echo "3) 证书管理 (SSLCerts)"
+        echo "0) 返回主菜单"
+        echo "==============================================="
+        read -rp "请选择: " ss_sv_choice
+        case "$ss_sv_choice" in
+            1)
+                echo "1.列表 2.添加 3.修改 4.删除 0.返回"
+                read -p "选择操作: " sub
+                case $sub in
+                    1) sed -n '/"servers": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"username"|"name"|"type"|"location"' | sed 'N;N;N;s/\n/ /g' | awk -F'"' '{print "ID: "$4" | 名称: "$8" | 类型: "$12" | 位置: "$16}'; read -p "按回车继续..." ;;
+                    2) read -p "数字ID: " UNUM; UI="s${UNUM}"; read -p "名称: " UNAME; read -p "类型: " UTYPE; read -p "位置: " ULOC
+                       NODE="        {\n            \"username\": \"$UI\",\n            \"name\": \"$UNAME\",\n            \"type\": \"${UTYPE:-kvm}\",\n            \"host\": \"$UNAME\",\n            \"location\": \"$ULOC\",\n            \"password\": \"USER_DEFAULT_PASSWORD\",\n            \"monthstart\": 1\n        },"
+                       sed -i "/\"servers\": \[/a \\$NODE" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                    3) read -p "修改ID: " EID
+                       if grep -q "\"username\": \"$EID\"" "$CONFIG_FILE"; then
+                           read -p "新名: " EN; [ ! -z "$EN" ] && { sed -i "/\"username\": \"$EID\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$EN\"/" "$CONFIG_FILE"; sed -i "/\"username\": \"$EID\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$EN\"/" "$CONFIG_FILE"; }; restart_ss_docker
+                       fi; read -p "按回车继续..." ;;
+                    4) read -p "删除ID: " DID; L=$(grep -n "\"username\": \"$DID\"" "$CONFIG_FILE" | cut -d: -f1); [ ! -z "$L" ] && sed -i "$((L - 1)),$((L + 7))d" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                esac ;;
+            2)
+                echo "1.列表 2.添加 3.删除 0.返回"
+                read -p "选择操作: " sub
+                case $sub in
+                    1) sed -n '/"monitors": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"host"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 地址: "$8}'; read -p "按回车继续..." ;;
+                    2) read -p "名称: " MN; read -p "地址: " MH; M_NODE="        {\n            \"name\": \"$MN\",\n            \"host\": \"$MH\",\n            \"interval\": 600,\n            \"type\": \"https\"\n        },"
+                       sed -i "/\"monitors\": \[/a \\$M_NODE" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                    3) read -p "删除名: " DM; LN=$(grep -n "\"name\": \"$DM\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1); [ ! -z "$LN" ] && sed -i "$((LN - 1)),$((LN + 4))d" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                esac ;;
+            3)
+                echo "1.列表 2.添加 3.删除 0.返回"
+                read -p "选择操作: " sub
+                case $sub in
+                    1) sed -n '/"sslcerts": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"domain"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 域名: "$8}'; read -p "按回车继续..." ;;
+                    2) read -p "名称: " SN; read -p "域名: " SD; S_NODE="        {\n            \"name\": \"$SN\",\n            \"domain\": \"$SD\",\n            \"port\": 443,\n            \"interval\": 7200,\n            \"callback\": \"https://yourSMSurl\"\n        },"
+                       sed -i "/\"sslcerts\": \[/a \\$S_NODE" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                    3) read -p "删除名: " DS; SLN=$(grep -n "\"name\": \"$DS\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1); [ ! -z "$SLN" ] && sed -i "$((SLN - 1)),$((SLN + 5))d" "$CONFIG_FILE" && restart_ss_docker; read -p "按回车继续..." ;;
+                esac ;;
+            0) break ;;
+            *) echo "❗ 无效选项"; sleep 1 ;;
+        esac
+    done
+}
+
 # ---------- 主菜单 ----------
 main_menu() {
 while true; do
@@ -896,9 +996,9 @@ while true; do
     else
       DISK_TOTAL="未知"
     fi
-    
+
     echo "==============================================="
-    echo "      田小瑞一键脚本 V1.0"
+    echo "      田小瑞一键脚本 1.0.1"
     echo "      操作系统：($OS_VERSION)"
     echo -e "      $CPU_CORES核  $MEM_TOTAL内存  $DISK_TOTAL存储  $SWAP_TOTAL虚拟内存"
     echo "==============================================="
@@ -909,6 +1009,9 @@ while true; do
     echo "9) 一键清理日志和缓存"
     echo "10) 系统管理"
 	echo "11) 安装/更新 qBittorrent"
+	echo "12) ServerStatus 客户端"
+    echo "13) ServerStatus 服务端"
+    echo "0) 退出"
     echo "0) 退出"
     echo "==============================================="
     read -rp "请选择: " choice
@@ -952,6 +1055,8 @@ while true; do
         install_qbittorrent
   ;;
       0) ok "退出脚本"; exit 0 ;;
+      12) manage_ss_client ;;
+      13) manage_ss_server ;;
       *) warn "无效选项"; sleep 1 ;;
     esac
   done
