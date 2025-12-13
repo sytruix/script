@@ -928,81 +928,130 @@ manage_ss_client() {
 
 # --- ServerStatus 服务端管理 (选项 13 增强版) ---
 manage_ss_server() {
+    # 强制路径与配置定义
     CONFIG_FILE="/opt/serverstatus/serverstatus-config.json"
-    [[ ! -f "$CONFIG_FILE" ]] && error "未找到配置文件: $CONFIG_FILE" && read -p "按回车返回..." && return
     
-    restart_ss() { 
-        echo "正在重启容器以应用配置..."
-        docker restart serverstatus >/dev/null 2>&1 && ok "Docker 容器已重启，配置生效！"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        error "未找到配置文件: $CONFIG_FILE"
+        read -p "按回车返回..."
+        return
+    fi
+
+    # 直接将您的逻辑适配为内部函数
+    restart_docker() {
+        docker restart serverstatus >/dev/null 2>&1
+        echo -e "${GREEN}🔄 配置已应用，容器已重启${NC}"
     }
 
+    list_servers() {
+        echo -e "${GREEN}--- 当前 Servers 节点列表 ---${NC}"
+        sed -n '/"servers": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"username"|"name"|"type"|"location"' | sed 'N;N;N;s/\n/ /g' | awk -F'"' '{print "ID: "$4" | 名称: "$8" | 类型: "$12" | 位置: "$16}'
+    }
+
+    list_monitors() {
+        echo -e "${GREEN}--- 当前 Monitors 监控列表 ---${NC}"
+        sed -n '/"monitors": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"host"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 地址: "$8}'
+    }
+
+    list_ssl() {
+        echo -e "${GREEN}--- 当前 SSLCerts 证书检测列表 ---${NC}"
+        sed -n '/"sslcerts": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"domain"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 域名: "$8}'
+    }
+
+    # 进入您的 config_manager.sh 逻辑循环
     while true; do
         clear
-        echo "==============================================="
-        echo "      ServerStatus 服务端配置管理"
-        echo "==============================================="
-        echo "1) 节点管理 (Servers) - 查看/添加/删除"
-        echo "2) 监控管理 (Monitors) - 查看/添加/删除"
-        echo "3) 证书管理 (SSLCerts) - 查看/添加/删除"
-        echo "0) 返回主菜单"
-        echo "==============================================="
-        read -rp "请选择: " ssv
-        case "$ssv" in
+        echo -e "${YELLOW}===============================================${NC}"
+        echo -e "${GREEN}       ServerStatus 全能管理脚本${NC}"
+        echo -e "${YELLOW}===============================================${NC}"
+        echo "1. 服务器节点管理 (Servers)"
+        echo "2. 延迟测试管理 (Monitors)"
+        echo "3. SSL证书检测管理 (SSLCerts)"
+        echo "0. 退出并返回主菜单"
+        echo "-----------------------------------------------"
+        read -p "请选择大项 [0-3]: " main_choice
+
+        case $main_choice in
             1)
                 while true; do
-                    echo -e "\n[Servers 节点列表]:"
-                    echo "--------------------------------------------------------------------------------"
-                    sed -n '/"servers": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"username"|"name"|"type"|"location"' | sed 'N;N;N;s/\n/ /g' | awk -F'"' '{print "ID: "$4" | 名称: "$8" | 类型: "$12" | 位置: "$16}'
-                    echo "--------------------------------------------------------------------------------"
-                    echo "操作选项: 1.添加 2.修改名称 3.删除 0.返回"
-                    read -p "选择: " sub
+                    echo -e "\n [Servers]: 1.列表 2.添加 3.修改 4.删除 5.返回"
+                    read -p " 请选择: " sub
                     case $sub in
-                        1) read -p "数字ID (如05): " UN; UI="s$UN"; read -p "显示名: " NM; read -p "位置: " LC
-                           NODE="        {\n            \"username\": \"$UI\",\n            \"name\": \"$NM\",\n            \"type\": \"kvm\",\n            \"host\": \"$NM\",\n            \"location\": \"$LC\",\n            \"password\": \"USER_DEFAULT_PASSWORD\",\n            \"monthstart\": 1\n        },"
-                           sed -i "/\"servers\": \[/a \\$NODE" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        2) read -p "输入要修改的 ID (如 s01): " EID; read -p "新名称: " EN
-                           if [ ! -z "$EN" ]; then
-                               sed -i "/\"username\": \"$EID\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$EN\"/" "$CONFIG_FILE"
-                               sed -i "/\"username\": \"$EID\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$EN\"/" "$CONFIG_FILE"
-                               restart_ss
-                           fi; read -p "按回车继续..." ;;
-                        3) read -p "要删除的 ID (如 s01): " DID; L=$(grep -n "\"username\": \"$DID\"" "$CONFIG_FILE" | cut -d: -f1)
-                           [[ ! -z "$L" ]] && sed -i "$((L - 1)),$((L + 7))d" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        0) break ;;
+                        1) list_servers ;;
+                        2)
+                           read -p "数字ID (如05): " UNUM; UI="s${UNUM}"; read -p "名称: " UNAME; read -p "类型: " UTYPE; read -p "位置: " ULOC
+                           NODE="        {\n            \"username\": \"$UI\",\n            \"name\": \"$UNAME\",\n            \"type\": \"${UTYPE:-kvm}\",\n            \"host\": \"$UNAME\",\n            \"location\": \"$ULOC\",\n            \"password\": \"USER_DEFAULT_PASSWORD\",\n            \"monthstart\": 1\n        },"
+                           sed -i "/\"servers\": \[/a \\$NODE" "$CONFIG_FILE" && restart_docker ;;
+                        3)
+                           list_servers; read -p "输入要修改的ID (如 s01): " EID
+                           if [ ! -z "$EID" ] && grep -q "\"username\": \"$EID\"" "$CONFIG_FILE"; then
+                               read -p "新名称: " EN; read -p "新类型: " ET; read -p "新位置: " EL
+                               # 这里是您强调的逻辑：EN、ET、EL 依次判断修改
+                               [ ! -z "$EN" ] && { 
+                                   sed -i "/\"username\": \"$EID\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$EN\"/" "$CONFIG_FILE"
+                                   sed -i "/\"username\": \"$EID\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$EN\"/" "$CONFIG_FILE"
+                               }
+                               [ ! -z "$ET" ] && sed -i "/\"username\": \"$EID\"/,/\"type\":/ s/\"type\": \".*\"/\"type\": \"$ET\"/" "$CONFIG_FILE"
+                               [ ! -z "$EL" ] && sed -i "/\"username\": \"$EID\"/,/\"location\":/ s/\"location\": \".*\"/\"location\": \"$EL\"/" "$CONFIG_FILE"
+                               restart_docker
+                           fi ;;
+                        4)
+                           list_servers; read -p "删除ID: " DID
+                           L=$(grep -n "\"username\": \"$DID\"" "$CONFIG_FILE" | cut -d: -f1)
+                           [ ! -z "$L" ] && { sed -i "$((L - 1)),$((L + 7))d" "$CONFIG_FILE"; restart_docker; } ;;
+                        5) break ;;
                     esac
                 done ;;
             2)
                 while true; do
-                    echo -e "\n[Monitors 监控列表]:"
-                    echo "--------------------------------------------------------------------------------"
-                    sed -n '/"monitors": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"host"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 地址: "$8}'
-                    echo "--------------------------------------------------------------------------------"
-                    echo "操作选项: 1.添加 2.删除 0.返回"
-                    read -p "选择: " sub
+                    echo -e "\n [Monitors]: 1.列表 2.添加 3.修改 4.删除 5.返回"
+                    read -p " 请选择: " sub
                     case $sub in
-                        1) read -p "显示名: " MN; read -p "监控地址(IP/域名): " MH
+                        1) list_monitors ;;
+                        2)
+                           read -p "监控显示名称: " MN; read -p "监控地址: " MH
                            M_NODE="        {\n            \"name\": \"$MN\",\n            \"host\": \"$MH\",\n            \"interval\": 600,\n            \"type\": \"https\"\n        },"
-                           sed -i "/\"monitors\": \[/a \\$M_NODE" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        2) read -p "删除监控名: " DM; LN=$(grep -n "\"name\": \"$DM\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
-                           [[ ! -z "$LN" ]] && sed -i "$((LN - 1)),$((LN + 4))d" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        0) break ;;
+                           sed -i "/\"monitors\": \[/a \\$M_NODE" "$CONFIG_FILE" && restart_docker ;;
+                        3)
+                           list_monitors; read -p "要修改的监控名称: " MON
+                           if [ ! -z "$MON" ] && grep -q "\"name\": \"$MON\"" "$CONFIG_FILE"; then
+                               read -p "新名称: " MN; read -p "新地址: " MH
+                               [ ! -z "$MN" ] && sed -i "/\"name\": \"$MON\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$MN\"/" "$CONFIG_FILE"
+                               TNAME=${MN:-$MON}
+                               [ ! -z "$MH" ] && sed -i "/\"name\": \"$TNAME\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$MH\"/" "$CONFIG_FILE"
+                               restart_docker
+                           fi ;;
+                        4)
+                           list_monitors; read -p "删除监控名称: " DM
+                           LN=$(grep -n "\"name\": \"$DM\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
+                           [ ! -z "$LN" ] && { sed -i "$((LN - 1)),$((LN + 4))d" "$CONFIG_FILE"; restart_docker; } ;;
+                        5) break ;;
                     esac
                 done ;;
             3)
                 while true; do
-                    echo -e "\n[SSLCerts 证书列表]:"
-                    echo "--------------------------------------------------------------------------------"
-                    sed -n '/"sslcerts": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"domain"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 域名: "$8}'
-                    echo "--------------------------------------------------------------------------------"
-                    echo "操作选项: 1.添加 2.删除 0.返回"
-                    read -p "选择: " sub
+                    echo -e "\n [SSLCerts]: 1.列表 2.添加 3.修改 4.删除 5.返回"
+                    read -p " 请选择: " sub
                     case $sub in
-                        1) read -p "名称: " SN; read -p "完整域名(带https://): " SD
-                           S_NODE="        {\n            \"name\": \"$SN\",\n            \"domain\": \"$SD\",\n            \"port\": 443,\n            \"interval\": 7200,\n            \"callback\": \"https://yourSMSurl\"\n        },"
-                           sed -i "/\"sslcerts\": \[/a \\$S_NODE" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        2) read -p "删除证书名: " DS; SLN=$(grep -n "\"name\": \"$DS\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
-                           [[ ! -z "$SLN" ]] && sed -i "$((SLN - 1)),$((SLN + 5))d" "$CONFIG_FILE" && restart_ss; read -p "按回车继续..." ;;
-                        0) break ;;
+                        1) list_ssl ;;
+                        2)
+                           read -p "名称: " SN; read -p "域名 (带https://): " SD; read -p "端口 (默认443): " SP
+                           S_NODE="        {\n            \"name\": \"$SN\",\n            \"domain\": \"$SD\",\n            \"port\": ${SP:-443},\n            \"interval\": 7200,\n            \"callback\": \"https://yourSMSurl\"\n        },"
+                           sed -i "/\"sslcerts\": \[/a \\$S_NODE" "$CONFIG_FILE" && restart_docker ;;
+                        3)
+                           list_ssl; read -p "修改证书名称: " ON
+                           if [ ! -z "$ON" ] && grep -q "\"name\": \"$ON\"" "$CONFIG_FILE"; then
+                               read -p "新名称: " NN; read -p "新域名: " ND
+                               [ ! -z "$NN" ] && sed -i "/\"name\": \"$ON\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$NN\"/" "$CONFIG_FILE"
+                               TNAME=${NN:-$ON}
+                               [ ! -z "$ND" ] && sed -i "/\"name\": \"$TNAME\"/,/\"domain\":/ s/\"domain\": \".*\"/\"domain\": \"$ND\"/" "$CONFIG_FILE"
+                               restart_docker
+                           fi ;;
+                        4)
+                           list_ssl; read -p "删除证书名称: " DS
+                           SLN=$(grep -n "\"name\": \"$DS\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
+                           [ ! -z "$SLN" ] && { sed -i "$((SLN - 1)),$((SLN + 5))d" "$CONFIG_FILE"; restart_docker; } ;;
+                        5) break ;;
                     esac
                 done ;;
             0) break ;;
