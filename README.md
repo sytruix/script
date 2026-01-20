@@ -6,12 +6,37 @@
 
 一个功能强大的Linux服务器管理系统脚本，提供一站式的服务器运维解决方案。
 
+### ✨ 脚本特点
+- 🔧 **25+功能模块** - 从基础优化到高级管理
+- 🐳 **Docker完整支持** - 安装、配置、维护一站式
+- 🗄️ **数据库管理** - MySQL/PostgreSQL备份恢复
+- 🛡️ **安全防护** - Fail2Ban、SSL证书、SSH管理
+- 🚀 **网络加速** - GitHub加速、NTP同步、ICMP控制
+- 📦 **一键安装** - 各种面板和工具的快速部署
+
+## ⚡ 一键运行
+
+想要立即体验？使用这个一键命令：
+```bash
+curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+```
+
 ## 🚀 快速开始
 
 ### 下载和运行
+
+#### 一键运行命令（推荐）
+```bash
+# 一键下载并运行（自动获取权限）
+curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+```
+
+> **注意**: 一键运行命令会自动下载并执行脚本，适合快速测试。如果您需要保留脚本文件以便后续使用，请使用手动下载方式。
+
+#### 手动下载方式
 ```bash
 # 下载脚本
-wget -O txrui.sh https://raw.githubusercontent.com/your-repo/txruimain.sh
+wget -O txrui.sh https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh
 
 # 赋予执行权限
 chmod +x txrui.sh
@@ -248,9 +273,9 @@ git push origin feature/new-function
 
 ## 📞 联系我们
 
-- 📧 **邮箱**: your-email@example.com
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-repo/issues)
-- 💬 **讨论**: [GitHub Discussions](https://github.com/your-repo/discussions)
+- 📧 **邮箱**: sytruix@gmail.com
+- 🐛 **Issues**: [GitHub Issues](https://github.com/sytruix/script/issues)
+- 💬 **讨论**: [GitHub Discussions](https://github.com/sytruix/script/discussions)
 
 ## 📈 更新日志
 
