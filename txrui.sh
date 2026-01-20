@@ -4,10 +4,10 @@
 #==============================================
 #
 # 一键运行命令:
-# curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+# curl -fsSL https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh | sudo bash
 #
 # 或手动下载:
-# wget -O txrui.sh https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh
+# wget -O txrui.sh https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh
 # chmod +x txrui.sh && sudo ./txrui.sh
 
 # ---------- 公共函数 ----------
@@ -3958,7 +3958,7 @@ script_self_update() {
   echo "         脚本自更新"
   echo "=========================================="
 
-  SCRIPT_URL="https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh"
+  SCRIPT_URL="https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh"
   SCRIPT_PATH="$(readlink -f "$0")"
   SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
   SCRIPT_NAME="$(basename "$SCRIPT_PATH")"
