@@ -18,7 +18,7 @@
 
 想要立即体验？使用这个一键命令：
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh | sudo bash
 ```
 
 ## 🚀 快速开始
@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txru
 #### 一键运行命令（推荐）
 ```bash
 # 一键下载并运行（自动获取权限）
-curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh | sudo bash
 ```
 
 > **注意**: 一键运行命令会自动下载并执行脚本，适合快速测试。如果您需要保留脚本文件以便后续使用，请使用手动下载方式。
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txru
 #### 手动下载方式
 ```bash
 # 下载脚本
-wget -O txrui.sh https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh
+wget -O txrui.sh https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh
 
 # 赋予执行权限
 chmod +x txrui.sh
