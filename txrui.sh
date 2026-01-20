@@ -2,6 +2,13 @@
 #==============================================
 # 田小瑞一键脚本 v1.0.1
 #==============================================
+#
+# 一键运行命令:
+# curl -fsSL https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh | sudo bash
+#
+# 或手动下载:
+# wget -O txrui.sh https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh
+# chmod +x txrui.sh && sudo ./txrui.sh
 
 # ---------- 公共函数 ----------
 ok()    { echo -e "\033[32m[✔] $1\033[0m"; }
@@ -3951,7 +3958,7 @@ script_self_update() {
   echo "         脚本自更新"
   echo "=========================================="
 
-  SCRIPT_URL="https://raw.githubusercontent.com/your-repo/txruimain.sh"
+  SCRIPT_URL="https://raw.githubusercontent.com/sytruix/script/refs/heads/main/txrui.sh"
   SCRIPT_PATH="$(readlink -f "$0")"
   SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
   SCRIPT_NAME="$(basename "$SCRIPT_PATH")"
