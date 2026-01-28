@@ -112,16 +112,30 @@ mkdir -p /etc/hysteria /usr/local/etc/hysteria
 # 写入 Xray 初始配置到官方路径
 cat > /usr/local/etc/xray/config.json <<EOF
 {
-  "log": {
-    "loglevel": "warning"
+  "log": { "loglevel": "warning" },
+  "api": {
+    "tag": "api",
+    "services": ["HandlerService", "StatsService"]
   },
-  "inbounds": [],
-  "outbounds": [
-    {
-      "protocol": "freedom",
-      "settings": {}
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
     }
-  ]
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" },
+      "tag": "api-inbound"
+    }
+  ],
+  "outbounds": [{ "protocol": "freedom", "settings": {} }]
 }
 EOF
 
@@ -145,6 +159,11 @@ auth:
   http:
     url: ${PANEL_URL}/api/traffic/auth
     insecure: false
+
+# 【新增】开启本地流量监控接口，允许面板通过 API 实时“抓取”数据
+trafficStats:
+  listen: 127.0.0.1:4444 
+  secret: "${API_KEY}" # 使用你的 API_KEY 作为访问密钥
 
 masquerade:
   type: proxy
