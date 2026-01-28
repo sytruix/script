@@ -124,6 +124,10 @@ cat > /usr/local/etc/xray/config.json <<EOF
         "statsUserUplink": true,
         "statsUserDownlink": true
       }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
     }
   },
   "inbounds": [
@@ -135,7 +139,24 @@ cat > /usr/local/etc/xray/config.json <<EOF
       "tag": "api-inbound"
     }
   ],
-  "outbounds": [{ "protocol": "freedom", "settings": {} }]
+  "outbounds": [
+    { "protocol": "freedom", "tag": "direct", "settings": {} },
+    { "protocol": "blackhole", "tag": "blocked", "settings": {} }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api-inbound"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "blocked"
+      }
+    ]
+  }
 }
 EOF
 
