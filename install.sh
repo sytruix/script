@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# PyTunnel-Hub 服务器环境自动安装脚本 (增强版：支持自动卸载与版本重装)
-# 用法: curl -fsSL ... | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com --xray-version v26.1.23
+# PyTunnel-Hub 服务器环境自动安装脚本 (极致适配版)
+# 变更点：1. API 端口锁定 8080 (最佳兼容性)  2. 补全 api outbound 显式路由
 
 set -e
 
@@ -36,25 +36,16 @@ fi
 # --- 卸载/清理函数 ---
 uninstall_old_installation() {
     echo -e "${YELLOW}[-] 检测到旧版本，正在执行自动卸载/清理...${NC}"
-    
-    # 停止服务
     systemctl stop xray hysteria-server >/dev/null 2>&1 || true
     systemctl disable xray hysteria-server >/dev/null 2>&1 || true
-    
-    # 使用 Xray 官方脚本尝试卸载 (如果存在)
     if [ -f "/usr/local/bin/xray" ]; then
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove >/dev/null 2>&1 || true
     fi
-
-    # 强制清理遗留文件
     rm -rf /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service
     rm -rf /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
-    
-    # 备份旧配置 (防止误删)
     if [ -d "/etc/xray" ]; then
         mv /etc/xray /etc/xray_backup_$(date +%s) >/dev/null 2>&1 || true
     fi
-    
     echo -e "${GREEN}[+] 旧版本清理完成。${NC}"
 }
 
@@ -62,36 +53,29 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    PyTunnel-Hub 环境重装/安装脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# 1. 系统环境与权限检查
 if [ "$EUID" -ne 0 ]; then echo -e "${RED}请使用 root 运行${NC}"; exit 1; fi
 
-# 2. 自动检测并处理旧安装
 if [ -f "/usr/local/bin/xray" ] || [ -f "/usr/local/bin/hysteria" ]; then
     uninstall_old_installation
 fi
 
-# 3. 系统组件安装
 echo -e "${YELLOW}[1/5] 安装基础组件...${NC}"
 apt-get update -qq && apt-get install -y curl wget unzip chrony openssl || yum install -y curl wget unzip chrony openssl
 
-# 4. 安装选定的 Xray 版本
 echo -e "${YELLOW}[2/5] 安装 Xray 内核 ($XRAY_VERSION)...${NC}"
 if [ "$XRAY_VERSION" = "latest" ]; then
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 else
-    # 明确安装指定版本
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version "$XRAY_VERSION"
 fi
 
-# 5. 安装 Hysteria2
 echo -e "${YELLOW}[3/5] 安装 Hysteria2...${NC}"
 bash <(curl -fsSL https://get.hy2.sh/)
 
-# 6. 配置初始化
-echo -e "${YELLOW}[4/5] 写入 API 闭环配置...${NC}"
+echo -e "${YELLOW}[4/5] 写入 API 闭环配置 (Port: 8080)...${NC}"
 mkdir -p /etc/xray /etc/hysteria
 
-# 写入 Xray 配置 (适配 v26.x 及其严苛的 API 规则)
+# 写入 Xray 配置
 cat > /etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
@@ -107,7 +91,7 @@ cat > /etc/xray/config.json <<EOF
   "inbounds": [
     {
       "listen": "127.0.0.1",
-      "port": 10085,
+      "port": 8080,
       "protocol": "dokodemo-door",
       "settings": { "address": "127.0.0.1" },
       "tag": "api-inbound"
@@ -115,11 +99,13 @@ cat > /etc/xray/config.json <<EOF
   ],
   "outbounds": [
     { "protocol": "freedom", "tag": "direct" },
-    { "protocol": "blackhole", "tag": "blocked" }
+    { "protocol": "blackhole", "tag": "blocked" },
+    { "protocol": "freedom", "tag": "api", "settings": {} }
   ],
   "routing": {
     "rules": [
-      { "type": "field", "inboundTag": ["api-inbound"], "outboundTag": "api" }
+      { "type": "field", "inboundTag": ["api-inbound"], "outboundTag": "api" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "blocked" }
     ]
   }
 }
@@ -140,24 +126,22 @@ trafficStats:
   secret: "${API_KEY}"
 EOF
 
-# 生成自签名证书
 openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
     -out /etc/hysteria/cert.crt -days 3650 \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=example.com" >/dev/null 2>&1
 
-# 7. 服务启动与优化
+echo -e "${YELLOW}[5/5] 启动服务并同步面板...${NC}"
 sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable xray hysteria-server
 systemctl restart xray hysteria-server chrony
 
-# 8. 通知面板
-echo -e "${YELLOW}[5/5] 通知面板同步配置...${NC}"
 curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
      -H "X-Node-API-Key: ${API_KEY}" \
      -H "Content-Type: application/json" -s > /dev/null || true
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}    安装完成！版本: $XRAY_VERSION${NC}"
-echo -e "${GREEN}    API 端口: 10085 | 状态: 运行中${NC}"
+echo -e "${GREEN}    安装/重装完成！版本: $XRAY_VERSION${NC}"
+echo -e "${GREEN}    API 端口已修正为: 8080${NC}"
+echo -e "${GREEN}    现在你可以直接运行 xray api rmu 而不需要加参数了${NC}"
 echo -e "${GREEN}========================================${NC}"
