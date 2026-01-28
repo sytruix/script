@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# PyTunnel-Hub 服务器环境自动安装脚本
-# 用法: curl -fsSL https://your-panel.com/static/install.sh | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com
+# PyTunnel-Hub 服务器环境自动安装脚本 (增强版：支持版本选择)
+# 用法: curl -fsSL ... | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com --xray-version v26.1.23
 
 set -e
 
@@ -9,12 +9,13 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # 默认参数
 SERVER_ID=""
 API_KEY=""
 PANEL_URL=""
+XRAY_VERSION="latest" # 默认最新版
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
             PANEL_URL="$2"
             shift 2
             ;;
+        --xray-version)
+            XRAY_VERSION="$2" # 例如 v26.1.23
+            shift 2
+            ;;
         *)
             echo -e "${RED}未知参数: $1${NC}"
             exit 1
@@ -41,16 +46,16 @@ done
 # 检查必需参数
 if [ -z "$SERVER_ID" ] || [ -z "$API_KEY" ] || [ -z "$PANEL_URL" ]; then
     echo -e "${RED}错误: 缺少必需参数${NC}"
-    echo "用法: $0 --server-id <id> --api-key <key> --panel-url <url>"
+    echo "用法: $0 --server-id <id> --api-key <key> --panel-url <url> [--xray-version <version>]"
     exit 1
 fi
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  PyTunnel-Hub 服务器环境安装脚本${NC}"
+echo -e "${GREEN}   PyTunnel-Hub 服务器环境安装脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo ""
 echo "服务器ID: $SERVER_ID"
 echo "面板地址: $PANEL_URL"
+echo "Xray 版本: $XRAY_VERSION"
 echo ""
 
 # 检查是否为 root 用户
@@ -69,55 +74,45 @@ else
     exit 1
 fi
 
-echo -e "${YELLOW}[1/6] 检测到系统: $OS $VERSION${NC}"
+echo -e "${YELLOW}[1/6] 系统检测: $OS $VERSION${NC}"
 
-# 更新系统
-echo -e "${YELLOW}[2/6] 更新系统包...${NC}"
+# 更新系统基础包
+echo -e "${YELLOW}[2/6] 安装基础组件...${NC}"
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    apt-get update -qq
-    apt-get install -y curl wget unzip
+    apt-get update -qq && apt-get install -y curl wget unzip chrony openssl
 elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-    yum install -y curl wget unzip
-else
-    echo -e "${RED}不支持的系统: $OS${NC}"
-    exit 1
+    yum install -y curl wget unzip chrony openssl
 fi
 
-# 安装 Xray 内核
-echo -e "${YELLOW}[3/6] 安装 Xray 内核...${NC}"
-if ! command -v xray >/dev/null 2>&1; then
+# 安装 Xray 内核 (支持版本选择)
+echo -e "${YELLOW}[3/6] 安装 Xray 内核 ($XRAY_VERSION)...${NC}"
+if [ "$XRAY_VERSION" = "latest" ]; then
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-    echo -e "${GREEN}✓ Xray 安装完成${NC}"
 else
-    echo -e "${GREEN}✓ Xray 已安装，跳过${NC}"
+    # 安装指定版本，例如 v26.1.23
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version "$XRAY_VERSION"
 fi
 
 # 安装 Hysteria2 内核
 echo -e "${YELLOW}[4/6] 安装 Hysteria2 内核...${NC}"
 if ! command -v hysteria >/dev/null 2>&1; then
     bash <(curl -fsSL https://get.hy2.sh/)
-    echo -e "${GREEN}✓ Hysteria2 安装完成${NC}"
-else
-    echo -e "${GREEN}✓ Hysteria2 已安装，跳过${NC}"
 fi
 
-# 创建初始配置并建立路径映射（双重保险）
-echo -e "${YELLOW}[5/6] 正在配置环境与路径映射...${NC}"
-
-# 创建两个可能的配置目录（兼容不同发行版）
+# 创建初始配置并建立路径映射
+echo -e "${YELLOW}[5/6] 正在初始化 API 闭环配置...${NC}"
 mkdir -p /etc/xray /usr/local/etc/xray
 mkdir -p /etc/hysteria /usr/local/etc/hysteria
 
-# ========== Xray 配置 ==========
-# 写入 Xray 初始配置到官方路径
+# 写入适配新版 Xray 的 API 闭环配置 (无 api-outbound，依赖内部路由)
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
+  "stats": {},
   "api": {
     "tag": "api",
-    "services": ["HandlerService", "StatsService"]
+    "services": ["HandlerService", "StatsService", "LoggerService"]
   },
-  "stats": {},
   "policy": {
     "levels": {
       "0": {
@@ -140,190 +135,62 @@ cat > /usr/local/etc/xray/config.json <<EOF
     }
   ],
   "outbounds": [
-    { "protocol": "freedom", "tag": "direct", "settings": {} },
-    { "protocol": "blackhole", "tag": "blocked", "settings": {} }
+    { "protocol": "freedom", "tag": "direct" },
+    { "protocol": "blackhole", "tag": "blocked" }
   ],
   "routing": {
     "rules": [
       {
         "type": "field",
-        "inboundTag": [
-          "api-inbound"
-        ],
+        "inboundTag": ["api-inbound"],
         "outboundTag": "api"
-      },
-      {
-        "type": "field",
-        "ip": [
-          "geoip:private"
-        ],
-        "outboundTag": "blocked"
       }
     ]
   }
 }
 EOF
 
-# 【关键】建立软链接：面板推送到 /usr/local/etc，系统从任意路径读取都一致
+# 路径映射
 ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
-echo -e "${GREEN}✓ Xray 配置路径映射已建立${NC}"
-echo -e "  /usr/local/etc/xray/config.json ← 主配置"
-echo -e "  /etc/xray/config.json → 软链接"
 
-# ========== Hysteria2 配置 ==========
-# 写入 Hysteria2 初始配置
+# Hysteria2 配置
 cat > /etc/hysteria/config.yaml <<EOF
 listen: :443
-
 tls:
   cert: /etc/hysteria/cert.crt
   key: /etc/hysteria/cert.key
-
 auth:
   type: http
   http:
     url: ${PANEL_URL}/api/traffic/auth
-    insecure: false
-
-# 【新增】开启本地流量监控接口，允许面板通过 API 实时“抓取”数据
 trafficStats:
   listen: 127.0.0.1:4444 
-  secret: "${API_KEY}" # 使用你的 API_KEY 作为访问密钥
-
-masquerade:
-  type: proxy
-  proxy:
-    url: https://www.bing.com
-    rewriteHost: true
+  secret: "${API_KEY}"
 EOF
-
-# 建立 Hysteria2 软链接（某些版本可能从 /usr/local/etc 读取）
 ln -sf /etc/hysteria/config.yaml /usr/local/etc/hysteria/config.yaml
-echo -e "${GREEN}✓ Hysteria2 配置路径映射已建立${NC}"
-echo -e "  /etc/hysteria/config.yaml ← 主配置"
-echo -e "  /usr/local/etc/hysteria/config.yaml → 软链接"
 
-# 生成自签名证书（如果不存在）
+# 生成自签名证书
 if [ ! -f /etc/hysteria/cert.crt ]; then
-    echo -e "${YELLOW}正在生成 Hysteria2 自签名证书...${NC}"
     openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
         -out /etc/hysteria/cert.crt -days 3650 \
         -subj "/C=US/ST=State/L=City/O=Organization/CN=example.com" >/dev/null 2>&1
-    echo -e "${GREEN}✓ 自签名证书已生成${NC}"
 fi
 
-# ========== 修复 Systemd 服务权限配置 ==========
-echo ""
-echo -e "${YELLOW}正在优化 systemd 服务配置...${NC}"
-
-# 修复 Xray 服务权限（避免 "Special user nobody" 警告）
-if [ -f /etc/systemd/system/xray.service ]; then
-    # 备份原配置
-    cp /etc/systemd/system/xray.service /etc/systemd/system/xray.service.backup
-    
-    # 将 User=nobody 改为 User=root（确保配置文件读取权限）
-    sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
-    sed -i 's/^Group=nobody/Group=root/' /etc/systemd/system/xray.service
-    
-    echo -e "${GREEN}✓ Xray 服务权限已优化 (User=root)${NC}"
-fi
-
-# 修复 Xray 服务文件（如果在其他位置）
-if [ -f /usr/lib/systemd/system/xray.service ]; then
-    cp /usr/lib/systemd/system/xray.service /usr/lib/systemd/system/xray.service.backup
-    sed -i 's/^User=nobody/User=root/' /usr/lib/systemd/system/xray.service
-    sed -i 's/^Group=nobody/Group=root/' /usr/lib/systemd/system/xray.service
-fi
-
-# 确保配置文件权限正确
-chmod 644 /usr/local/etc/xray/config.json
-chmod 644 /etc/hysteria/config.yaml
-chmod 600 /etc/hysteria/cert.key 2>/dev/null || true
-chmod 644 /etc/hysteria/cert.crt 2>/dev/null || true
-
-echo -e "${GREEN}✓ 配置文件权限已设置${NC}"
-
-# 重新加载 systemd 配置
+# 优化 Systemd
+sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service 2>/dev/null || true
 systemctl daemon-reload
+systemctl enable xray hysteria-server >/dev/null 2>&1 || true
 
-# 启用服务（但不立即启动，等待配置推送）
-systemctl enable xray >/dev/null 2>&1 || true
-systemctl enable hysteria-server >/dev/null 2>&1 || true
-
-echo -e "${GREEN}✓ 配置环境初始化完成${NC}"
-
-# 保存服务器信息
-cat > /etc/pytunnel-server.conf <<EOF
-SERVER_ID=$SERVER_ID
-API_KEY=$API_KEY
-PANEL_URL=$PANEL_URL
-INSTALL_DATE=$(date)
-EOF
-
-# 自动通知面板进行首次配置同步
-echo ""
-echo -e "${YELLOW}[6/6] 正在请求面板推送节点配置...${NC}"
-SYNC_RESULT=$(curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
+# 自动通知面板同步
+echo -e "${YELLOW}[6/6] 正在通知面板推送配置...${NC}"
+curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
      -H "X-Node-API-Key: ${API_KEY}" \
-     -H "Content-Type: application/json" \
-     -s -w "\n%{http_code}" 2>/dev/null || echo "000")
+     -H "Content-Type: application/json" -s > /dev/null || true
 
-HTTP_CODE=$(echo "$SYNC_RESULT" | tail -n1)
-RESPONSE_BODY=$(echo "$SYNC_RESULT" | head -n -1)
+# 配置时间同步
+systemctl enable chrony >/dev/null 2>&1 || true
+systemctl restart chrony >/dev/null 2>&1 || true
 
-if [ "$HTTP_CODE" = "200" ]; then
-    echo -e "${GREEN}✓ 配置同步成功${NC}"
-    echo "$RESPONSE_BODY" | grep -q '"deployed_count"' && echo "$RESPONSE_BODY" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE_BODY"
-else
-    echo -e "${YELLOW}⚠ 自动同步失败 (HTTP $HTTP_CODE)${NC}"
-    echo -e "${YELLOW}  可能原因：面板上还没有创建节点实例${NC}"
-    echo -e "${YELLOW}  请在面板中创建节点实例后，点击'部署'按钮${NC}"
-fi
-
-echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  环境安装完成！${NC}"
+echo -e "${GREEN}   安装完成！API 端口: 10085${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo ""
-echo "服务器ID: $SERVER_ID"
-echo "Xray 状态: $(systemctl is-active xray 2>/dev/null || echo '未启动')"
-echo "Hysteria2 状态: $(systemctl is-active hysteria-server 2>/dev/null || echo '未启动')"
-echo ""
-echo "下一步："
-if [ "$HTTP_CODE" = "200" ]; then
-    echo "✓ 节点配置已自动推送并启动"
-    echo "✓ 用户可以立即使用"
-else
-    echo "1. 在面板中创建节点实例（协议、端口、传输方式等）"
-    echo "2. 点击'部署'按钮，配置将自动推送到此服务器"
-    echo "3. 服务将自动启动，用户即可使用"
-fi
-echo ""
-echo -e "${YELLOW}提示: 请确保防火墙已开放相应端口${NC}"
-echo "  - SSH: 22 (面板管理必需)"
-echo "  - 节点端口: 根据面板中配置的端口开放"
-echo ""
-
-# 防火墙自动配置（如果存在）
-if command -v ufw >/dev/null 2>&1; then
-    echo -e "${YELLOW}检测到 UFW 防火墙，配置基础规则...${NC}"
-    ufw allow 22/tcp >/dev/null 2>&1
-    echo -e "${GREEN}✓ SSH 端口已开放${NC}"
-    echo -e "${YELLOW}  其他端口请根据节点配置手动开放${NC}"
-    echo ""
-fi
-
-# 时间同步（VMess 协议对时间敏感）
-echo -e "${YELLOW}配置时间同步（VMess 协议要求）...${NC}"
-if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    apt-get install -y chrony >/dev/null 2>&1
-    systemctl enable chrony >/dev/null 2>&1
-    systemctl restart chrony >/dev/null 2>&1
-elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-    yum install -y chrony >/dev/null 2>&1
-    systemctl enable chronyd >/dev/null 2>&1
-    systemctl restart chronyd >/dev/null 2>&1
-fi
-echo -e "${GREEN}✓ 时间同步已配置${NC}"
-echo ""
-
