@@ -168,11 +168,44 @@ if [ ! -f /etc/hysteria/cert.crt ]; then
     echo -e "${GREEN}✓ 自签名证书已生成${NC}"
 fi
 
+# ========== 修复 Systemd 服务权限配置 ==========
+echo ""
+echo -e "${YELLOW}正在优化 systemd 服务配置...${NC}"
+
+# 修复 Xray 服务权限（避免 "Special user nobody" 警告）
+if [ -f /etc/systemd/system/xray.service ]; then
+    # 备份原配置
+    cp /etc/systemd/system/xray.service /etc/systemd/system/xray.service.backup
+    
+    # 将 User=nobody 改为 User=root（确保配置文件读取权限）
+    sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
+    sed -i 's/^Group=nobody/Group=root/' /etc/systemd/system/xray.service
+    
+    echo -e "${GREEN}✓ Xray 服务权限已优化 (User=root)${NC}"
+fi
+
+# 修复 Xray 服务文件（如果在其他位置）
+if [ -f /usr/lib/systemd/system/xray.service ]; then
+    cp /usr/lib/systemd/system/xray.service /usr/lib/systemd/system/xray.service.backup
+    sed -i 's/^User=nobody/User=root/' /usr/lib/systemd/system/xray.service
+    sed -i 's/^Group=nobody/Group=root/' /usr/lib/systemd/system/xray.service
+fi
+
+# 确保配置文件权限正确
+chmod 644 /usr/local/etc/xray/config.json
+chmod 644 /etc/hysteria/config.yaml
+chmod 600 /etc/hysteria/cert.key 2>/dev/null || true
+chmod 644 /etc/hysteria/cert.crt 2>/dev/null || true
+
+echo -e "${GREEN}✓ 配置文件权限已设置${NC}"
+
+# 重新加载 systemd 配置
+systemctl daemon-reload
+
 # 启用服务（但不立即启动，等待配置推送）
 systemctl enable xray >/dev/null 2>&1 || true
 systemctl enable hysteria-server >/dev/null 2>&1 || true
 
-echo ""
 echo -e "${GREEN}✓ 配置环境初始化完成${NC}"
 
 # 保存服务器信息
