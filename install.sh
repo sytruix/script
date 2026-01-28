@@ -101,12 +101,16 @@ else
     echo -e "${GREEN}✓ Hysteria2 已安装，跳过${NC}"
 fi
 
-# 创建初始配置（占位符，等待面板推送）
-echo -e "${YELLOW}[5/6] 创建初始配置...${NC}"
+# 创建初始配置并建立路径映射（双重保险）
+echo -e "${YELLOW}[5/6] 正在配置环境与路径映射...${NC}"
 
-# Xray 初始配置
-mkdir -p /etc/xray
-cat > /etc/xray/config.json <<EOF
+# 创建两个可能的配置目录（兼容不同发行版）
+mkdir -p /etc/xray /usr/local/etc/xray
+mkdir -p /etc/hysteria /usr/local/etc/hysteria
+
+# ========== Xray 配置 ==========
+# 写入 Xray 初始配置到官方路径
+cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
     "loglevel": "warning"
@@ -121,8 +125,14 @@ cat > /etc/xray/config.json <<EOF
 }
 EOF
 
-# Hysteria2 初始配置
-mkdir -p /etc/hysteria
+# 【关键】建立软链接：面板推送到 /usr/local/etc，系统从任意路径读取都一致
+ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
+echo -e "${GREEN}✓ Xray 配置路径映射已建立${NC}"
+echo -e "  /usr/local/etc/xray/config.json ← 主配置"
+echo -e "  /etc/xray/config.json → 软链接"
+
+# ========== Hysteria2 配置 ==========
+# 写入 Hysteria2 初始配置
 cat > /etc/hysteria/config.yaml <<EOF
 listen: :443
 
@@ -143,8 +153,15 @@ masquerade:
     rewriteHost: true
 EOF
 
+# 建立 Hysteria2 软链接（某些版本可能从 /usr/local/etc 读取）
+ln -sf /etc/hysteria/config.yaml /usr/local/etc/hysteria/config.yaml
+echo -e "${GREEN}✓ Hysteria2 配置路径映射已建立${NC}"
+echo -e "  /etc/hysteria/config.yaml ← 主配置"
+echo -e "  /usr/local/etc/hysteria/config.yaml → 软链接"
+
 # 生成自签名证书（如果不存在）
 if [ ! -f /etc/hysteria/cert.crt ]; then
+    echo -e "${YELLOW}正在生成 Hysteria2 自签名证书...${NC}"
     openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
         -out /etc/hysteria/cert.crt -days 3650 \
         -subj "/C=US/ST=State/L=City/O=Organization/CN=example.com" >/dev/null 2>&1
@@ -155,7 +172,8 @@ fi
 systemctl enable xray >/dev/null 2>&1 || true
 systemctl enable hysteria-server >/dev/null 2>&1 || true
 
-echo -e "${GREEN}✓ 初始配置已创建${NC}"
+echo ""
+echo -e "${GREEN}✓ 配置环境初始化完成${NC}"
 
 # 保存服务器信息
 cat > /etc/pytunnel-server.conf <<EOF
