@@ -147,12 +147,16 @@ cat > /usr/local/etc/xray/config.json <<EOF
     "rules": [
       {
         "type": "field",
-        "inboundTag": ["api-inbound"],
+        "inboundTag": [
+          "api-inbound"
+        ],
         "outboundTag": "api"
       },
       {
         "type": "field",
-        "ip": ["geoip:private"],
+        "ip": [
+          "geoip:private"
+        ],
         "outboundTag": "blocked"
       }
     ]
