@@ -46,7 +46,7 @@ if [ "$UNINSTALL_MODE" = "true" ]; then
     if [ -f "/usr/local/bin/xray" ]; then
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove 2>/dev/null || true
     fi
-    rm -f /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service 2>/dev/null || true
+    rm -f /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service /lib/systemd/system/xray.service 2>/dev/null || true
     
     echo -e "${YELLOW}[3/4] 卸载 Hysteria2...${NC}"
     rm -f /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service 2>/dev/null || true
@@ -79,8 +79,9 @@ uninstall_old_installation() {
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove >/dev/null 2>&1 || true
     fi
 
-    rm -rf /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service
-    rm -rf /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
+    rm -rf /usr/local/bin/xray /usr/local/share/xray
+    rm -f /etc/systemd/system/xray.service /lib/systemd/system/xray.service
+    rm -f /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
     
     if [ -d "/etc/xray" ]; then
         mv /etc/xray /etc/xray_backup_$(date +%s) >/dev/null 2>&1 || true
@@ -116,7 +117,7 @@ mkdir -p /usr/local/etc/xray
 mkdir -p /etc/xray
 mkdir -p /etc/hysteria
 
-# 写入 Xray 配置 (适配 API 闭环与 Level 99 黑洞)
+# 写入 Xray 配置 (采用 3x-ui 的 tunnel 协议架构，极大提升 API 稳定性和隐蔽性)
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning", "access": "none" },
@@ -173,7 +174,7 @@ auth:
   http:
     url: ${PANEL_URL}/api/traffic/auth
 trafficStats:
-  listen: 127.0.0.1:4444 
+  listen: 127.0.0.1:4444
   secret: "${API_KEY}"
 EOF
 
@@ -184,8 +185,16 @@ openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
 
 echo -e "${YELLOW}[5/5] 启动服务并优化运行环境...${NC}"
 
-# 确保 Xray 有权限读取证书
-if [ -f "/etc/systemd/system/xray.service" ]; then
+# [优化1] 修正证书权限，确保 Xray 和 Hy2 都能读取
+chmod 644 /etc/hysteria/cert.key /etc/hysteria/cert.crt
+
+# [优化2] 自动查找并修正 Xray 服务权限 (兼容不同发行版)
+SERVICE_PATH=$(systemctl show -p FragmentPath xray 2>/dev/null | cut -d= -f2)
+if [ -n "$SERVICE_PATH" ] && [ -f "$SERVICE_PATH" ]; then
+    echo -e "${YELLOW}[*] 修正服务权限: $SERVICE_PATH${NC}"
+    sed -i 's/^User=nobody/User=root/' "$SERVICE_PATH"
+elif [ -f "/etc/systemd/system/xray.service" ]; then
+    # 兼容旧逻辑
     sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
 fi
 
@@ -193,9 +202,9 @@ systemctl daemon-reload
 systemctl enable xray hysteria-server chrony
 systemctl restart xray hysteria-server chrony
 
-# 验证安装
+# [优化3] 验证安装并等待 API 就绪
 echo -e "${YELLOW}[验证] 检查服务状态...${NC}"
-sleep 2
+sleep 3
 
 # 检查 Xray
 if systemctl is-active --quiet xray; then
@@ -215,11 +224,13 @@ else
     systemctl status hysteria-server --no-pager || true
 fi
 
-# 通知面板同步
+# [优化4] 通知面板同步 (带超时和重试)
 echo -e "${YELLOW}[同步] 通知面板同步配置...${NC}"
 curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
      -H "X-Node-API-Key: ${API_KEY}" \
-     -H "Content-Type: application/json" -s > /dev/null || true
+     -H "Content-Type: application/json" \
+     -m 10 --retry 3 --retry-delay 2 \
+     -s > /dev/null || echo -e "${YELLOW}[!] 面板同步超时，Xray 将在 1-2 秒后自动就绪${NC}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    安装完成！版本: $XRAY_VERSION${NC}"
