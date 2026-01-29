@@ -119,61 +119,41 @@ mkdir -p /etc/hysteria
 # 写入 Xray 配置 (适配 API 闭环与 Level 99 黑洞)
 cat > /usr/local/etc/xray/config.json <<EOF
 {
-  "log": { "loglevel": "warning" },
+  "log": { "loglevel": "warning", "access": "none" },
   "api": {
-    "tag": "api-service",
-    "services": ["HandlerService", "StatsService"]
+    "tag": "api",
+    "services": ["HandlerService", "LoggerService", "StatsService"]
   },
   "stats": {},
+  "metrics": {
+    "tag": "metrics_out",
+    "listen": "127.0.0.1:11111"
+  },
   "policy": {
     "levels": {
-      "0": {
-        "statsUserUplink": true,
-        "statsUserDownlink": true,
-        "connIdle": 300
-      },
-      "99": {
-        "handshake": 0,
-        "connIdle": 0,
-        "bufferSize": 0
-      }
+      "0": { "statsUserUplink": true, "statsUserDownlink": true, "connIdle": 300 }
     },
-    "system": {
-      "statsInboundUplink": true,
-      "statsInboundDownlink": true
-    }
+    "system": { "statsInboundUplink": true, "statsInboundDownlink": true }
   },
   "inbounds": [
     {
+      "tag": "api",
       "listen": "127.0.0.1",
-      "port": 8080,
-      "protocol": "dokodemo-door",
-      "settings": { "address": "127.0.0.1" },
-      "tag": "api-inbound"
+      "port": 62789,
+      "protocol": "tunnel",
+      "settings": { "address": "127.0.0.1" }
     }
   ],
   "outbounds": [
-    { "protocol": "freedom", "tag": "direct" },
-    { "protocol": "blackhole", "tag": "blocked" },
-    {
-      "protocol": "freedom",
-      "tag": "api-service",
-      "settings": {}
-    }
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "AsIs" } },
+    { "tag": "blocked", "protocol": "blackhole", "settings": {} }
   ],
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
-      {
-        "type": "field",
-        "inboundTag": ["api-inbound"],
-        "outboundTag": "api-service"
-      },
-      {
-        "type": "field",
-        "userLevel": 99,
-        "outboundTag": "blocked"
-      }
+      { "type": "field", "inboundTag": ["api"], "outboundTag": "api" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "blocked" },
+      { "type": "field", "protocol": ["bittorrent"], "outboundTag": "blocked" }
     ]
   }
 }
