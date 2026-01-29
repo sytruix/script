@@ -1,11 +1,8 @@
 #!/bin/bash
 
-# PyTunnel-Hub 服务器环境自动安装脚本 (极致适配完整版)
-# 功能：
-# 1. 自动安装 Xray & Hysteria2
-# 2. 部署 Level 99 黑洞路由规则 (实现秒级断网)
-# 3. 规范化路径：/usr/local/etc/xray/config.json -> /etc/xray/config.json
-# 4. 自动生成自签名证书并适配双协议
+# PyTunnel-Hub 服务器环境自动安装脚本 (极致适配版)
+# 功能：1. 自动清理旧环境 2. 部署 Xray API 3. 配置 Level 99 黑洞路由 4. 路径标准化
+# 用法: curl -fsSL ... | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com --xray-version v26.1.23
 
 set -e
 
@@ -33,49 +30,58 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$SERVER_ID" ] || [ -z "$API_KEY" ] || [ -z "$PANEL_URL" ]; then
-    echo -e "${RED}错误: 缺少必需参数 (--server-id, --api-key, --panel-url)${NC}"
+    echo -e "${RED}错误: 缺少必需参数${NC}"
     exit 1
 fi
 
 # --- 卸载/清理函数 ---
 uninstall_old_installation() {
-    echo -e "${YELLOW}[-] 检测到旧版本，执行清理...${NC}"
+    echo -e "${YELLOW}[-] 检测到旧版本，正在执行自动卸载/清理...${NC}"
     systemctl stop xray hysteria-server >/dev/null 2>&1 || true
     systemctl disable xray hysteria-server >/dev/null 2>&1 || true
+    
     if [ -f "/usr/local/bin/xray" ]; then
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove >/dev/null 2>&1 || true
     fi
+
     rm -rf /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service
     rm -rf /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
+    
+    if [ -d "/etc/xray" ]; then
+        mv /etc/xray /etc/xray_backup_$(date +%s) >/dev/null 2>&1 || true
+    fi
     echo -e "${GREEN}[+] 旧版本清理完成。${NC}"
 }
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}    PyTunnel-Hub 环境极致适配版安装${NC}"
+echo -e "${GREEN}    PyTunnel-Hub 环境重装/安装脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 if [ "$EUID" -ne 0 ]; then echo -e "${RED}请使用 root 运行${NC}"; exit 1; fi
 
-uninstall_old_installation
+if [ -f "/usr/local/bin/xray" ] || [ -f "/usr/local/bin/hysteria" ]; then
+    uninstall_old_installation
+fi
 
 echo -e "${YELLOW}[1/5] 安装基础组件...${NC}"
 apt-get update -qq && apt-get install -y curl wget unzip chrony openssl || yum install -y curl wget unzip chrony openssl
 
 echo -e "${YELLOW}[2/5] 安装 Xray 内核 ($XRAY_VERSION)...${NC}"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install ${XRAY_VERSION:+--version $XRAY_VERSION}
+if [ "$XRAY_VERSION" = "latest" ]; then
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+else
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version "$XRAY_VERSION"
+fi
 
 echo -e "${YELLOW}[3/5] 安装 Hysteria2...${NC}"
 bash <(curl -fsSL https://get.hy2.sh/)
 
-echo -e "${YELLOW}[4/5] 写入 API 闭环配置与软链接...${NC}"
-mkdir -p /usr/local/etc/xray /etc/xray /etc/hysteria
+echo -e "${YELLOW}[4/5] 写入 API 闭环配置与标准化路径...${NC}"
+mkdir -p /usr/local/etc/xray
+mkdir -p /etc/xray
+mkdir -p /etc/hysteria
 
-# 1. 自动生成自签名证书 (供 Xray TLS 和 Hysteria2 共用)
-openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
-    -out /etc/hysteria/cert.crt -days 3650 \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=example.com" >/dev/null 2>&1
-
-# 2. 写入 Xray 核心配置 (实际路径)
+# 写入 Xray 配置 (适配 API 闭环与 Level 99 黑洞)
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
@@ -116,7 +122,6 @@ cat > /usr/local/etc/xray/config.json <<EOF
       "streamSettings": {
         "network": "ws",
         "security": "tls",
-        "wsSettings": { "path": "/" },
         "tlsSettings": {
           "certificates": [{
             "certificateFile": "/etc/hysteria/cert.crt",
@@ -141,10 +146,10 @@ cat > /usr/local/etc/xray/config.json <<EOF
 }
 EOF
 
-# 3. 建立软链接
+# 建立软链接
 ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
 
-# 4. Hysteria2 配置
+# Hysteria2 配置
 cat > /etc/hysteria/config.yaml <<EOF
 listen: :443
 tls:
@@ -159,8 +164,14 @@ trafficStats:
   secret: "${API_KEY}"
 EOF
 
-echo -e "${YELLOW}[5/5] 启动服务并同步面板...${NC}"
-# 修正 Xray Service 以 root 运行以便读取证书和执行 API
+# 生成自签名证书 (供 Xray 与 Hy2 共用)
+openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/hysteria/cert.key \
+    -out /etc/hysteria/cert.crt -days 3650 \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=txrui.top" >/dev/null 2>&1
+
+echo -e "${YELLOW}[5/5] 启动服务并优化运行环境...${NC}"
+
+# 确保 Xray 有权限读取证书
 if [ -f "/etc/systemd/system/xray.service" ]; then
     sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
 fi
@@ -169,14 +180,14 @@ systemctl daemon-reload
 systemctl enable xray hysteria-server
 systemctl restart xray hysteria-server chrony
 
-# 调用面板同步接口
+# 通知面板同步
 curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
      -H "X-Node-API-Key: ${API_KEY}" \
      -H "Content-Type: application/json" -s > /dev/null || true
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}    安装完成！配置生效中...${NC}"
-echo -e "${GREEN}    Xray 配置: /etc/xray/config.json${NC}"
-echo -e "${GREEN}    API 地址: 127.0.0.1:8080${NC}"
-echo -e "${GREEN}    黑洞规则: Level 99 已激活${NC}"
+echo -e "${GREEN}    安装完成！版本: $XRAY_VERSION${NC}"
+echo -e "${GREEN}    API 端口: 8080 (127.0.0.1)${NC}"
+echo -e "${GREEN}    路径: /usr/local/etc/xray/config.json${NC}"
+echo -e "${GREEN}    黑洞策略: 已激活 (Level 99)${NC}"
 echo -e "${GREEN}========================================${NC}"
