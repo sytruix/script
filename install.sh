@@ -101,7 +101,8 @@ cat > /usr/local/etc/xray/config.json <<EOF
             "statsUserUplink": false, 
             "statsUserDownlink": false,
             "handshake": 0,
-            "connIdle": 0 
+            "connIdle": 0,
+            "bufferSize": 0
         }
     },
     "system": { "statsInboundUplink": true, "statsInboundDownlink": true }
@@ -133,14 +134,14 @@ cat > /usr/local/etc/xray/config.json <<EOF
   ],
   "outbounds": [
     { "protocol": "freedom", "tag": "direct" },
-    { "protocol": "blackhole", "tag": "block-out" },
+    { "protocol": "blackhole", "tag": "blocked" },
     { "protocol": "freedom", "tag": "api", "settings": {} }
   ],
   "routing": {
     "rules": [
       { "type": "field", "inboundTag": ["api-inbound"], "outboundTag": "api" },
-      { "type": "field", "userLevel": 99, "outboundTag": "block-out" },
-      { "type": "field", "ip": ["geoip:private"], "outboundTag": "block-out" }
+      { "type": "field", "userLevel": 99, "outboundTag": "blocked" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "blocked" }
     ]
   }
 }
