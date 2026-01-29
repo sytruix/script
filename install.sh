@@ -2,7 +2,8 @@
 
 # PyTunnel-Hub 服务器环境自动安装脚本 (极致适配版)
 # 功能：1. 自动清理旧环境 2. 部署 Xray API 3. 配置 Level 99 黑洞路由 4. 路径标准化
-# 用法: curl -fsSL ... | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com --xray-version v26.1.23
+# 用法(安装): curl -fsSL ... | bash -s -- --server-id 1 --api-key xxx --panel-url http://panel.com --xray-version v26.1.23
+# 用法(卸载): curl -fsSL ... | bash -s -- --uninstall
 
 set -e
 
@@ -17,6 +18,7 @@ SERVER_ID=""
 API_KEY=""
 PANEL_URL=""
 XRAY_VERSION="latest"
+UNINSTALL_MODE=false
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -25,12 +27,45 @@ while [[ $# -gt 0 ]]; do
         --api-key) API_KEY="$2"; shift 2 ;;
         --panel-url) PANEL_URL="$2"; shift 2 ;;
         --xray-version) XRAY_VERSION="$2"; shift 2 ;;
+        --uninstall) UNINSTALL_MODE=true; shift ;;
         *) echo -e "${RED}未知参数: $1${NC}"; exit 1 ;;
     esac
 done
 
+# ==================== 卸载模式 ====================
+if [ "$UNINSTALL_MODE" = "true" ]; then
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}    PyTunnel-Hub 环境卸载脚本${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    
+    echo -e "${YELLOW}[1/4] 停止服务...${NC}"
+    systemctl stop xray hysteria-server 2>/dev/null || true
+    systemctl disable xray hysteria-server 2>/dev/null || true
+    
+    echo -e "${YELLOW}[2/4] 卸载 Xray...${NC}"
+    if [ -f "/usr/local/bin/xray" ]; then
+        bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove 2>/dev/null || true
+    fi
+    rm -f /usr/local/bin/xray /usr/local/share/xray /etc/systemd/system/xray.service 2>/dev/null || true
+    
+    echo -e "${YELLOW}[3/4] 卸载 Hysteria2...${NC}"
+    rm -f /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service 2>/dev/null || true
+    
+    echo -e "${YELLOW}[4/4] 清理配置文件和数据...${NC}"
+    rm -rf /etc/xray 2>/dev/null || true
+    rm -rf /etc/hysteria 2>/dev/null || true
+    rm -rf /usr/local/etc/xray 2>/dev/null || true
+    rm -f /usr/local/bin/xray 2>/dev/null || true
+    
+    systemctl daemon-reload
+    
+    echo -e "${GREEN}[+] 卸载完成！所有服务已停止，配置文件已清理。${NC}"
+    exit 0
+fi
+
+# ==================== 安装模式 ====================
 if [ -z "$SERVER_ID" ] || [ -z "$API_KEY" ] || [ -z "$PANEL_URL" ]; then
-    echo -e "${RED}错误: 缺少必需参数${NC}"
+    echo -e "${RED}错误: 缺少必需参数 (--server-id, --api-key, --panel-url)${NC}"
     exit 1
 fi
 
