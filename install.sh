@@ -190,17 +190,40 @@ if [ -f "/etc/systemd/system/xray.service" ]; then
 fi
 
 systemctl daemon-reload
-systemctl enable xray hysteria-server
+systemctl enable xray hysteria-server chrony
 systemctl restart xray hysteria-server chrony
 
+# 验证安装
+echo -e "${YELLOW}[验证] 检查服务状态...${NC}"
+sleep 2
+
+# 检查 Xray
+if systemctl is-active --quiet xray; then
+    echo -e "${GREEN}[✓] Xray 服务运行正常${NC}"
+    XRAY_VERSION_INSTALLED=$(xray version | head -n 1)
+    echo -e "${GREEN}[✓] Xray 版本: $XRAY_VERSION_INSTALLED${NC}"
+else
+    echo -e "${RED}[✗] Xray 服务启动失败${NC}"
+    systemctl status xray --no-pager || true
+fi
+
+# 检查 Hysteria2
+if systemctl is-active --quiet hysteria-server; then
+    echo -e "${GREEN}[✓] Hysteria2 服务运行正常${NC}"
+else
+    echo -e "${RED}[✗] Hysteria2 服务启动失败${NC}"
+    systemctl status hysteria-server --no-pager || true
+fi
+
 # 通知面板同步
+echo -e "${YELLOW}[同步] 通知面板同步配置...${NC}"
 curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
      -H "X-Node-API-Key: ${API_KEY}" \
      -H "Content-Type: application/json" -s > /dev/null || true
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    安装完成！版本: $XRAY_VERSION${NC}"
-echo -e "${GREEN}    API 端口: 8080 (127.0.0.1)${NC}"
-echo -e "${GREEN}    路径: /usr/local/etc/xray/config.json${NC}"
-echo -e "${GREEN}    黑洞策略: 已激活 (Level 99)${NC}"
+echo -e "${GREEN}    API 端口: 62789 (127.0.0.1)${NC}"
+echo -e "${GREEN}    Hysteria2: 443${NC}"
+echo -e "${GREEN}    配置文件: /usr/local/etc/xray/config.json${NC}"
 echo -e "${GREEN}========================================${NC}"
