@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # PyTunnel-Hub 服务器环境自动安装脚本 (极致适配版)
-# 变更点：1. API 端口锁定 8080 (最佳兼容性)  2. 补全 api outbound 显式路由
+# 更新项：1. 增加 blackhole 出口  2. 增加 Level 99 黑洞路由规则  3. 优化 API 闭环逻辑
 
 set -e
 
@@ -85,7 +85,10 @@ cat > /etc/xray/config.json <<EOF
     "services": ["HandlerService", "StatsService"]
   },
   "policy": {
-    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true } },
+    "levels": { 
+        "0": { "statsUserUplink": true, "statsUserDownlink": true },
+        "99": { "statsUserUplink": false, "statsUserDownlink": false }
+    },
     "system": { "statsInboundUplink": true, "statsInboundDownlink": true }
   },
   "inbounds": [
@@ -99,13 +102,14 @@ cat > /etc/xray/config.json <<EOF
   ],
   "outbounds": [
     { "protocol": "freedom", "tag": "direct" },
-    { "protocol": "blackhole", "tag": "blocked" },
+    { "protocol": "blackhole", "tag": "block-out" },
     { "protocol": "freedom", "tag": "api", "settings": {} }
   ],
   "routing": {
     "rules": [
       { "type": "field", "inboundTag": ["api-inbound"], "outboundTag": "api" },
-      { "type": "field", "ip": ["geoip:private"], "outboundTag": "blocked" }
+      { "type": "field", "userLevel": 99, "outboundTag": "block-out" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "block-out" }
     ]
   }
 }
@@ -143,5 +147,5 @@ curl -X POST "${PANEL_URL}/api/servers/${SERVER_ID}/sync" \
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    安装/重装完成！版本: $XRAY_VERSION${NC}"
 echo -e "${GREEN}    API 端口已修正为: 8080${NC}"
-echo -e "${GREEN}    现在你可以直接运行 xray api rmu 而不需要加参数了${NC}"
+echo -e "${GREEN}    黑洞策略 (Level 99) 已部署${NC}"
 echo -e "${GREEN}========================================${NC}"
