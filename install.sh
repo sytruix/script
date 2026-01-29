@@ -85,27 +85,28 @@ mkdir -p /etc/hysteria
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
-  "stats": {},
   "api": {
-    "tag": "api",
+    "tag": "api-service",
     "services": ["HandlerService", "StatsService"]
   },
+  "stats": {},
   "policy": {
-    "levels": { 
-        "0": { 
-            "statsUserUplink": true, 
-            "statsUserDownlink": true,
-            "connIdle": 300 
-        },
-        "99": { 
-            "statsUserUplink": false, 
-            "statsUserDownlink": false,
-            "handshake": 0,
-            "connIdle": 0,
-            "bufferSize": 0
-        }
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "connIdle": 300
+      },
+      "99": {
+        "handshake": 0,
+        "connIdle": 0,
+        "bufferSize": 0
+      }
     },
-    "system": { "statsInboundUplink": true, "statsInboundDownlink": true }
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
+    }
   },
   "inbounds": [
     {
@@ -114,34 +115,30 @@ cat > /usr/local/etc/xray/config.json <<EOF
       "protocol": "dokodemo-door",
       "settings": { "address": "127.0.0.1" },
       "tag": "api-inbound"
-    },
-    {
-      "port": 8787,
-      "protocol": "vmess",
-      "tag": "vmess-1",
-      "settings": { "clients": [] },
-      "streamSettings": {
-        "network": "ws",
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [{
-            "certificateFile": "/etc/hysteria/cert.crt",
-            "keyFile": "/etc/hysteria/cert.key"
-          }]
-        }
-      }
     }
   ],
   "outbounds": [
     { "protocol": "freedom", "tag": "direct" },
     { "protocol": "blackhole", "tag": "blocked" },
-    { "protocol": "freedom", "tag": "api", "settings": {} }
+    {
+      "protocol": "freedom",
+      "tag": "api-service",
+      "settings": {}
+    }
   ],
   "routing": {
+    "domainStrategy": "AsIs",
     "rules": [
-      { "type": "field", "inboundTag": ["api-inbound"], "outboundTag": "api" },
-      { "type": "field", "userLevel": 99, "outboundTag": "blocked" },
-      { "type": "field", "ip": ["geoip:private"], "outboundTag": "blocked" }
+      {
+        "type": "field",
+        "inboundTag": ["api-inbound"],
+        "outboundTag": "api-service"
+      },
+      {
+        "type": "field",
+        "userLevel": 99,
+        "outboundTag": "blocked"
+      }
     ]
   }
 }
