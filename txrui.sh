@@ -1,6 +1,6 @@
 #!/bin/bash
 #==============================================
-# 田小瑞一键脚本 v1.0.1
+# 田小瑞一键脚本 v1.0.2
 #==============================================
 #
 # 一键运行命令:
@@ -10,16 +10,23 @@
 # wget -O txrui.sh https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh
 # chmod +x txrui.sh && sudo ./txrui.sh
 
+# 启用错误检查（在函数定义之前）
+# 注意：交互式函数中可能需要使用 set +e 来允许错误继续执行
+set -e
+
 # ---------- 公共函数 ----------
-ok()    { echo -e "\033[32m[✔] $1\033[0m"; }
-warn()  { echo -e "\033[33m[!] $1\033[0m"; }
-error() { echo -e "\033[31m[✘] $1\033[0m"; }
-info()  { echo -e "\033[36m[ℹ] $1\033[0m"; }
+ok()    { echo -e "${BOLD_GREEN}[✔]${NC} ${GREEN}$1${NC}"; }
+warn()  { echo -e "${BOLD_YELLOW}[!]${NC} ${YELLOW}$1${NC}"; }
+error() { echo -e "${BOLD_RED}[✘]${NC} ${RED}$1${NC}"; }
+info()  { echo -e "${BOLD_CYAN}[ℹ]${NC} ${CYAN}$1${NC}"; }
+success() { echo -e "${BOLD_GREEN}[✓]${NC} ${GREEN}$1${NC}"; }
+question() { echo -e "${BOLD_MAGENTA}[?]${NC} ${MAGENTA}$1${NC}"; }
 
 # 统一的等待用户输入函数
 pause() {
     local message="${1:-按回车继续...}"
-    read -rp "$message"
+    echo -e "${DIM}$message${NC}"
+    read -rp ""
 }
 
 # 安全的下载函数
@@ -46,16 +53,128 @@ validate_number() {
     [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge "$min" ] && [ "$input" -le "$max" ]
 }
 
+# 生成随机密码
+generate_random_password() {
+    local length="${1:-16}"
+    # 使用 /dev/urandom 生成安全的随机密码
+    if command -v openssl &> /dev/null; then
+        openssl rand -base64 "$length" | tr -d "=+/" | cut -c1-"$length"
+    elif [ -c /dev/urandom ]; then
+        tr -dc 'A-Za-z0-9!@#$%^&*' < /dev/urandom | head -c "$length"
+    else
+        # 备用方法
+        date +%s | sha256sum | base64 | head -c "$length"
+    fi
+}
+
+# 清理输入中的危险字符
+sanitize_input() {
+    local input="$1"
+    # 移除可能用于命令注入的字符
+    echo "$input" | sed 's/[;&|`$(){}]//g' | sed "s/'//g" | sed 's/"//g'
+}
+
+# 验证IP地址格式
+validate_ip() {
+    local ip="$1"
+    if [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        # 检查每个八位字节是否在有效范围内
+        IFS='.' read -ra ADDR <<< "$ip"
+        for i in "${ADDR[@]}"; do
+            if [[ "$i" -gt 255 ]]; then
+                return 1
+            fi
+        done
+        return 0
+    fi
+    return 1
+}
+
+# 验证端口号
+validate_port() {
+    local port="$1"
+    if [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
+        return 0
+    fi
+    return 1
+}
+
 # ---------- 颜色变量 ----------
-GREEN='\033[0;32m'
+# 基础颜色
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+WHITE='\033[0;37m'
+
+# 加粗颜色
+BOLD_RED='\033[1;31m'
+BOLD_GREEN='\033[1;32m'
+BOLD_YELLOW='\033[1;33m'
+BOLD_BLUE='\033[1;34m'
+BOLD_MAGENTA='\033[1;35m'
+BOLD_CYAN='\033[1;36m'
+BOLD_WHITE='\033[1;37m'
+
+# 背景颜色
+BG_RED='\033[41m'
+BG_GREEN='\033[42m'
+BG_YELLOW='\033[43m'
+BG_BLUE='\033[44m'
+BG_CYAN='\033[46m'
+
+# 特殊效果
+NC='\033[0m' # No Color (重置)
+DIM='\033[2m' # 暗淡
+UNDERLINE='\033[4m' # 下划线
+BLINK='\033[5m' # 闪烁
+
+# 颜色美化函数
+print_header() {
+    local title="$1"
+    echo -e "${BOLD_CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD_CYAN}║${NC} ${BOLD_WHITE}$title${NC} ${BOLD_CYAN}$(printf '%*s' $((60 - ${#title} - 2)) '')║${NC}"
+    echo -e "${BOLD_CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+}
+
+print_menu_header() {
+    local title="$1"
+    echo -e "${BOLD_BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD_CYAN}  $title${NC}"
+    echo -e "${BOLD_BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+print_section() {
+    local title="$1"
+    echo -e "${BOLD_MAGENTA}【${title}】${NC}"
+}
+
+print_option() {
+    local num="$1"
+    local desc="$2"
+    echo -e "  ${BOLD_GREEN}$num)${NC} ${CYAN}$desc${NC}"
+}
+
+print_option_pair() {
+    local num1="$1"
+    local desc1="$2"
+    local num2="$3"
+    local desc2="$4"
+    printf "  ${BOLD_GREEN}%2s)${NC} ${CYAN}%-25s${NC} ${BOLD_GREEN}%2s)${NC} ${CYAN}%s${NC}\n" "$num1" "$desc1" "$num2" "$desc2"
+}
+
+print_separator() {
+    echo -e "${BOLD_BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+print_divider() {
+    echo -e "${DIM}────────────────────────────────────────────────────────────────────────────────────────${NC}"
+}
 
 # ---------- 常量定义 ----------
-readonly SCRIPT_VERSION="v1.0.1"
+readonly SCRIPT_VERSION="v1.0.2"
 readonly GITHUB_RAW_URL="https://raw.githubusercontent.com"
 readonly QB_STATIC_REPO="userdocs/qbittorrent-nox-static"
 
@@ -63,18 +182,20 @@ readonly QB_STATIC_REPO="userdocs/qbittorrent-nox-static"
 manage_swap_menu() {
   while true; do
     clear
-    echo "====== 虚拟内存管理 ======"
-    echo "1) 查看当前虚拟内存"
-    echo "2) 添加 1G 虚拟内存"
-    echo "3) 添加 2G 虚拟内存"
-    echo "4) 添加 4G 虚拟内存"
-    echo "5) 添加 8G 虚拟内存"
-    echo "6) 删除虚拟内存"
-    echo "7) 开机自动挂载设置"
-    echo "8) 自定义添加虚拟内存"
-    echo "0) 返回主菜单"
-    echo "========================="
-    read -rp "请选择: " opt
+    print_menu_header "虚拟内存管理"
+    print_option "1" "查看当前虚拟内存"
+    print_option "2" "添加 1G 虚拟内存"
+    print_option "3" "添加 2G 虚拟内存"
+    print_option "4" "添加 4G 虚拟内存"
+    print_option "5" "添加 8G 虚拟内存"
+    print_option "6" "删除虚拟内存"
+    print_option "7" "开机自动挂载设置"
+    print_option "8" "自定义添加虚拟内存"
+    print_separator
+    echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+    read -r opt
 
     case "$opt" in
       1)
@@ -105,8 +226,9 @@ manage_swap_menu() {
         fi
         # 如果是分区，提示用户是否删除
         if [[ "$swapdev" =~ ^/dev/ ]]; then
-            read -rp "检测到 swap 分区 $swapdev。是否删除该分区? [y/N]: " yn
-            yn=${yn:-y}  # 默认回车自动删除
+            question "检测到 swap 分区 $swapdev。是否删除该分区? [y/N]: "
+            read -r yn
+            yn=${yn:-N}  # 默认不删除，防止误操作
             if [[ "$yn" =~ ^[Yy]$ ]]; then
                 # 删除分区（用 sfdisk 清空分区表）
                 echo "正在删除分区 $swapdev ..."
@@ -127,7 +249,8 @@ manage_swap_menu() {
         grep -q '/swapfile' /etc/fstab && ok "已设置自动挂载" || warn "未检测到自动挂载"
         pause ;;
       8)
-        read -rp "请输入虚拟内存大小（如 512M 或 3G）: " custom_size
+        question "请输入虚拟内存大小（如 512M 或 3G）: "
+        read -r custom_size
         if [[ ! $custom_size =~ ^[0-9]+[MmGg]$ ]]; then
           error "输入格式错误，请输入如 512M 或 2G"
           sleep 1
@@ -159,22 +282,38 @@ if ! fallocate -l "$size" /swapfile 2>/dev/null; then
     else
         count=$num
     fi
-    dd if=/dev/zero of=/swapfile bs=1M count=$count status=progress
-fi
+    if ! dd if=/dev/zero of=/swapfile bs=1M count=$count status=progress; then
+      error "创建 swap 文件失败"
+      return 1
+    fi
+  fi
 
-  chmod 600 /swapfile
-  mkswap /swapfile >/dev/null
-  swapon /swapfile
+  if ! chmod 600 /swapfile; then
+    error "设置 swap 文件权限失败"
+    return 1
+  fi
+  
+  if ! mkswap /swapfile >/dev/null 2>&1; then
+    error "格式化 swap 文件失败"
+    rm -f /swapfile
+    return 1
+  fi
+  
+  if ! swapon /swapfile; then
+    error "启用 swap 失败"
+    return 1
+  fi
+  
   if ! grep -q '/swapfile' /etc/fstab; then
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    if ! echo '/swapfile none swap sw 0 0' >> /etc/fstab; then
+      warn "无法写入 /etc/fstab，swap 可能不会在重启后自动启用"
+    fi
   fi
   ok "已成功添加 ${size} 虚拟内存并启用"
   pause
 }
 
 # ---------- 通用镜像源管理 ----------
-set -e
-
 BACKUP_DIR="/root"
 DATE=$(date +%Y%m%d_%H%M%S)
 
@@ -547,7 +686,7 @@ backup_sources() {
             ;;
     esac
 
-    echo "✅ 开始备份 $config_dir 到 $BACKUP_DIR/${backup_name}_backup_$DATE.tar.gz"
+    success "开始备份 $config_dir 到 $BACKUP_DIR/${backup_name}_backup_$DATE.tar.gz"
     if [ -d "$config_dir" ]; then
         tar czf "$BACKUP_DIR/${backup_name}_backup_$DATE.tar.gz" "$config_dir"
         echo "🎉 备份完成：$BACKUP_DIR/${backup_name}_backup_$DATE.tar.gz"
@@ -570,7 +709,7 @@ restore_backup(){
         return 1
     fi
     if [[ ! -f "$backup_file" ]]; then
-        echo "❌ 备份文件不存在：$backup_file"
+        error "备份文件不存在：$backup_file"
         return 1
     fi
 
@@ -595,12 +734,48 @@ restore_backup(){
             ;;
     esac
 
+    # 验证备份文件存在且有效
+    if [ ! -f "$backup_file" ]; then
+        error "备份文件不存在: $backup_file"
+        return 1
+    fi
+    
+    # 验证备份文件是否为有效的tar.gz文件
+    if ! tar -tzf "$backup_file" >/dev/null 2>&1; then
+        error "备份文件无效或已损坏: $backup_file"
+        return 1
+    fi
+
+    # 确认操作
+    warn "⚠️  警告: 此操作将删除 $config_dir 目录并恢复备份"
+    read -rp "确认继续? [y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        info "操作已取消"
+        return 0
+    fi
+
     echo "🔁 正在恢复备份..."
-    sudo rm -rf "$config_dir"
-    sudo mkdir -p "$config_dir"
-    sudo tar xzf "$backup_file" -C /
-    echo "✅ 恢复完成。"
+    # 创建临时备份以防恢复失败
+    local temp_backup="/tmp/${config_dir##*/}.backup.$(date +%s)"
+    if [ -d "$config_dir" ]; then
+        sudo cp -r "$config_dir" "$temp_backup" 2>/dev/null || true
+    fi
+    
+    if sudo rm -rf "$config_dir" && sudo mkdir -p "$config_dir" && sudo tar xzf "$backup_file" -C /; then
+        success "恢复完成。"
+        # 清理临时备份
+        sudo rm -rf "$temp_backup" 2>/dev/null || true
     return 0
+    else
+        error "恢复失败！"
+        # 尝试恢复临时备份
+        if [ -d "$temp_backup" ]; then
+            warn "尝试恢复原配置..."
+            sudo rm -rf "$config_dir" 2>/dev/null || true
+            sudo mv "$temp_backup" "$config_dir" 2>/dev/null || true
+        fi
+        return 1
+    fi
 }
 
 # 导入 GPG 公钥
@@ -615,9 +790,9 @@ import_gpg_keys() {
             tmpdir=$(mktemp -d)
             if gpg --no-default-keyring --keyring "$tmpdir/temp.gpg" --keyserver hkps://keyserver.ubuntu.com --recv-keys "$key" >/dev/null 2>&1; then
                 sudo gpg --no-default-keyring --keyring "$tmpdir/temp.gpg" --export "$key" | sudo tee "/etc/apt/trusted.gpg.d/${key}.gpg" >/dev/null
-                echo "✅ 公钥 $key 导入成功"
+                success "公钥 $key 导入成功"
             else
-                echo "❌ 公钥 $key 导入失败"
+                error "公钥 $key 导入失败"
             fi
             rm -rf "$tmpdir"
         done
@@ -645,8 +820,33 @@ write_sources() {
     case $pm in
         "apt")
             # Debian/Ubuntu
+            # 危险操作：删除系统关键目录，需要严格验证和确认
+            if [ ! -d "/etc/apt" ]; then
+                warn "/etc/apt 目录不存在，跳过删除步骤"
+            else
+                warn "⚠️  警告: 即将删除系统关键目录 /etc/apt"
+                warn "此操作将删除所有APT配置和源设置"
+                read -rp "确认继续? [y/N]: " confirm_apt
+                if [[ ! "$confirm_apt" =~ ^[Yy]$ ]]; then
+                    error "操作已取消"
+                    return 1
+                fi
+                
+                # 创建备份
+                local apt_backup="/tmp/etc-apt.backup.$(date +%Y%m%d_%H%M%S).tar.gz"
+                echo "📦 正在创建备份: $apt_backup"
+                if ! sudo tar -czf "$apt_backup" -C / etc/apt 2>/dev/null; then
+                    error "备份失败，操作已取消"
+                    return 1
+                fi
+                ok "备份已创建: $apt_backup"
+                
             echo "🧹 删除旧的 /etc/apt 目录..."
-            sudo rm -rf /etc/apt
+                if ! sudo rm -rf /etc/apt; then
+                    error "删除失败"
+                    return 1
+                fi
+            fi
             echo "📂 创建必要目录..."
             sudo mkdir -p /etc/apt/apt.conf.d /etc/apt/preferences.d /etc/apt/trusted.gpg.d
 
@@ -771,9 +971,7 @@ write_sources() {
 manage_sources_menu() {
   while true; do
     clear
-    echo "=========================================="
-    echo "         通用镜像源管理工具"
-    echo "=========================================="
+    print_menu_header "通用镜像源管理工具"
 
     # 检测系统信息
     local system_info=$(detect_system)
@@ -782,39 +980,41 @@ manage_sources_menu() {
     local pretty_name=$(echo $system_info | cut -d: -f3)
     local pm=$(get_package_manager)
 
-    echo "📦 当前系统：$pretty_name"
-    echo "🔧 包管理器：$pm"
+    echo -e "${BOLD_CYAN}📦 当前系统：${BOLD_WHITE}$pretty_name${NC}"
+    echo -e "${BOLD_CYAN}🔧 包管理器：${BOLD_GREEN}$pm${NC}"
     echo ""
 
     # 显示支持的镜像源选项（根据系统类型）
-    echo "请选择操作："
-    echo "1) 备份当前配置         2) 恢复配置备份"
+    echo -e "${BOLD_YELLOW}请选择操作：${NC}"
+    print_option_pair "1" "备份当前配置" "2" "恢复配置备份"
 
     case $pm in
         "apt")
-            echo "3) 使用 官方源           4) 使用 阿里云源"
-            echo "5) 使用 腾讯云源         6) 使用 华为云源"
+            print_option_pair "3" "使用 官方源" "4" "使用 阿里云源"
+            print_option_pair "5" "使用 腾讯云源" "6" "使用 华为云源"
             ;;
         "dnf"|"yum")
-            echo "3) 使用 官方源           4) 使用 阿里云源"
-            echo "5) 使用 腾讯云源         6) 使用 华为云源"
+            print_option_pair "3" "使用 官方源" "4" "使用 阿里云源"
+            print_option_pair "5" "使用 腾讯云源" "6" "使用 华为云源"
             ;;
         "zypper")
-            echo "3) 使用 官方源           4) 使用 阿里云源"
+            print_option_pair "3" "使用 官方源" "4" "使用 阿里云源"
             ;;
         "pacman")
-            echo "3) 使用 官方源"
+            print_option "3" "使用 官方源"
             ;;
         *)
-            echo "❌ 不支持的包管理器: $pm"
+            error "不支持的包管理器: $pm"
             pause
             break
             ;;
     esac
 
-    echo "7) 更新软件包列表     0) 返回主菜单"
-    echo "------------------------------------------"
-    read -rp "请输入选项: " choice
+    echo ""
+    print_option_pair "7" "更新软件包列表" "0" "返回主菜单"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请输入选项: ${NC}"
+    read -r choice
 
     case $choice in
       1) backup_sources "$system_info"; pause ;;
@@ -824,36 +1024,36 @@ manage_sources_menu() {
         if [[ "$pm" == "apt" || "$pm" == "dnf" || "$pm" == "yum" ]]; then
           write_sources "$system_info" "aliyun"; pause
         else
-          echo "❌ 此镜像源不适用于当前系统"; pause
+          error "此镜像源不适用于当前系统"; pause
         fi
         ;;
       5)
         if [[ "$pm" == "apt" || "$pm" == "dnf" || "$pm" == "yum" ]]; then
           write_sources "$system_info" "tencent"; pause
         else
-          echo "❌ 此镜像源不适用于当前系统"; pause
+          error "此镜像源不适用于当前系统"; pause
         fi
         ;;
       6)
         if [[ "$pm" == "apt" || "$pm" == "dnf" || "$pm" == "yum" ]]; then
           write_sources "$system_info" "huawei"; pause
         else
-          echo "❌ 此镜像源不适用于当前系统"; pause
+          error "此镜像源不适用于当前系统"; pause
         fi
         ;;
       7)
         case $pm in
-          "apt") echo "🔄 正在更新 apt 源..."; sudo apt-get update && sudo apt update ;;
-          "dnf") echo "🔄 正在更新 dnf 缓存..."; sudo dnf makecache ;;
-          "yum") echo "🔄 正在更新 yum 缓存..."; sudo yum makecache ;;
-          "zypper") echo "🔄 正在刷新 zypper 仓库..."; sudo zypper refresh ;;
-          "pacman") echo "🔄 正在更新 pacman 数据库..."; sudo pacman -Sy ;;
+          "apt") info "正在更新 apt 源..."; sudo apt-get update && sudo apt update ;;
+          "dnf") info "正在更新 dnf 缓存..."; sudo dnf makecache ;;
+          "yum") info "正在更新 yum 缓存..."; sudo yum makecache ;;
+          "zypper") info "正在刷新 zypper 仓库..."; sudo zypper refresh ;;
+          "pacman") info "正在更新 pacman 数据库..."; sudo pacman -Sy ;;
         esac
-        echo "✅ 更新完成"
+        success "更新完成"
         pause
         ;;
       0) break ;;
-      *) echo "❗ 无效选项，请重新输入"; pause ;;
+      *) warn "无效选项，请重新输入"; pause ;;
     esac
   done
 }
@@ -861,12 +1061,14 @@ manage_sources_menu() {
 # ---------- BBR 管理 ----------
 manage_bbr() {
   clear
-  echo "====== BBR 管理 ======"
-  echo "1) 启用 BBR"
-  echo "2) 查看 BBR 状态"
-  echo "0) 返回主菜单"
-  echo "===================="
-  read -rp "请选择: " opt
+  print_menu_header "BBR 管理"
+  print_option "1" "启用 BBR"
+  print_option "2" "查看 BBR 状态"
+  print_separator
+  echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
+  print_separator
+  echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+  read -r opt
   case "$opt" in
     1)
       echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
@@ -884,8 +1086,8 @@ manage_bbr() {
 # ---------- BBR 优化 ----------
 optimize_bbr() {
   clear
-  echo "====== BBR 优化 ======"
-  echo "正在优化 TCP 参数..."
+  print_menu_header "BBR 优化"
+  info "正在优化 TCP 参数..."
   cat >> /etc/sysctl.conf <<EOF
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
@@ -901,7 +1103,16 @@ EOF
 # ---------- 流媒体测试 ----------
 streaming_test() {
   clear
-  echo "====== 流媒体测试 ======"
+  print_menu_header "流媒体测试"
+  warn "安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://github.com/lmc999/RegionRestrictionCheck/raw/main/check.sh"
+  echo "此操作将从互联网下载并执行脚本，请确保您信任该来源。"
+  read -rp "确认继续? [y/N]: " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
   bash <(curl -sSL https://github.com/lmc999/RegionRestrictionCheck/raw/main/check.sh)
   pause
 }
@@ -909,8 +1120,10 @@ streaming_test() {
 # ---------- 安装宝塔 ----------
 install_bt_panel() {
   clear
-  echo "====== 安装宝塔面板 ======"
+  print_menu_header "安装宝塔面板"
+  info "正在下载安装脚本..."
   wget -O install.sh http://download.bt.cn/install/install-ubuntu_6.0.sh
+  info "正在执行安装..."
   bash install.sh
   pause
 }
@@ -918,7 +1131,19 @@ install_bt_panel() {
 # ---------- 安装 DPanel ----------
 install_dpanel() {
   clear
-  echo "====== 安装 DPanel 面板 ======"
+  print_menu_header "安装 DPanel 面板"
+  warn "安全警告: 即将执行远程安装脚本"
+  echo -e "${CYAN}脚本来源: ${BOLD_WHITE}https://raw.githubusercontent.com/Dpanel-Server/DPanel/master/install.sh${NC}"
+  echo -e "${YELLOW}此操作将从互联网下载并执行脚本，可能会修改系统配置。${NC}"
+  echo -e "${YELLOW}请确保您信任该来源并已备份重要数据。${NC}"
+  echo ""
+  question "确认继续安装? [y/N]: "
+  read -r confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "安装已取消"
+    pause
+    return
+  fi
   bash <(curl -sSL https://raw.githubusercontent.com/Dpanel-Server/DPanel/master/install.sh)
   pause
 }
@@ -926,32 +1151,44 @@ install_dpanel() {
 # ---------- 系统信息 ----------
 system_info() {
   clear
-  echo "====== 系统详细信息 ======"
+  print_menu_header "系统详细信息"
 
   # 基本信息
-  echo "主机名: $(hostname)"
-  echo "系统版本: $(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"')"
-  echo "内核版本: $(uname -r)"
-  echo "CPU 架构: $(uname -m)"
-  echo "CPU 信息: $(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ *//')"
-  echo "CPU 核心: $(nproc)"
+  echo -e "${BOLD_CYAN}📋 基本信息${NC}"
+  print_divider
+  echo -e "${CYAN}主机名:${NC} ${BOLD_WHITE}$(hostname)${NC}"
+  echo -e "${CYAN}系统版本:${NC} ${BOLD_WHITE}$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"')${NC}"
+  echo -e "${CYAN}内核版本:${NC} ${BOLD_WHITE}$(uname -r)${NC}"
+  echo -e "${CYAN}CPU 架构:${NC} ${BOLD_WHITE}$(uname -m)${NC}"
+  echo -e "${CYAN}CPU 信息:${NC} ${BOLD_WHITE}$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ *//')${NC}"
+  echo -e "${CYAN}CPU 核心:${NC} ${BOLD_GREEN}$(nproc)${NC}"
+  echo ""
 
   # 内存信息（用 MB/GB 显示）
+  echo -e "${BOLD_CYAN}💾 内存信息${NC}"
+  print_divider
   mem_used=$(free -m | awk '/Mem:/ {printf "%.1f", $3/1024}')
   mem_total=$(free -m | awk '/Mem:/ {printf "%.1f", $2/1024}')
-  echo "内存使用: ${mem_used}GB / ${mem_total}GB"
+  echo -e "${CYAN}内存使用:${NC} ${BOLD_YELLOW}${mem_used}GB${NC} / ${BOLD_GREEN}${mem_total}GB${NC}"
+  echo ""
 
   # 磁盘使用
+  echo -e "${BOLD_CYAN}💿 磁盘信息${NC}"
+  print_divider
   disk_used=$(df -h / | awk 'NR==2 {print $3}')
   disk_total=$(df -h / | awk 'NR==2 {print $2}')
-  echo "磁盘使用: ${disk_used} / ${disk_total}"
+  disk_percent=$(df -h / | awk 'NR==2 {print $5}')
+  echo -e "${CYAN}磁盘使用:${NC} ${BOLD_YELLOW}${disk_used}${NC} / ${BOLD_GREEN}${disk_total}${NC} (${BOLD_RED}${disk_percent}${NC})"
+  echo ""
 
   # ---------------- 交换空间 ----------------
+  echo -e "${BOLD_CYAN}🔄 交换空间${NC}"
+  print_divider
 	swap_used_mb=$(free -m | awk '/^Swap:/{print $3}')
 	swap_total_mb=$(free -m | awk '/^Swap:/{print $2}')
 
 	if [[ $swap_total_mb -eq 0 ]]; then
-    echo "交换空间: 未启用"
+    echo -e "${CYAN}交换空间:${NC} ${RED}未启用${NC}"
 	else
     if [[ $swap_total_mb -ge 1024 ]]; then
         swap_used=$(awk "BEGIN {printf \"%.1fG\", $swap_used_mb/1024}")
@@ -960,10 +1197,13 @@ system_info() {
         swap_used="${swap_used_mb}M"
         swap_total="${swap_total_mb}M"
     fi
-    echo "交换空间: $swap_used / $swap_total"
+    echo -e "${CYAN}交换空间:${NC} ${BOLD_YELLOW}${swap_used}${NC} / ${BOLD_GREEN}${swap_total}${NC}"
 	fi
+  echo ""
 
   # 系统运行时间（中文显示）
+  echo -e "${BOLD_CYAN}⏱️  系统运行时间${NC}"
+  print_divider
   uptime_sec=$(awk '{print int($1)}' /proc/uptime)
   days=$((uptime_sec / 86400))
   hours=$(( (uptime_sec % 86400) / 3600 ))
@@ -973,21 +1213,25 @@ system_info() {
   ((days > 0)) && uptime_str+="${days}天 "
   ((hours > 0)) && uptime_str+="${hours}小时 "
   ((mins > 0)) && uptime_str+="${mins}分钟"
-  echo "系统运行时间: $uptime_str"
+  echo -e "${CYAN}系统运行时间:${NC} ${BOLD_GREEN}${uptime_str}${NC}"
+  echo ""
 
   # 系统负载
-  echo "系统负载: $(uptime | awk -F'load average:' '{print $2}')"
+  echo -e "${BOLD_CYAN}📊 系统负载${NC}"
+  print_divider
+  echo -e "${CYAN}系统负载:${NC} ${BOLD_WHITE}$(uptime | awk -F'load average:' '{print $2}')${NC}"
+  echo ""
 
   # 网络信息
   get_network_info
 
-  echo "====================="
+  print_separator
   pause
 }
 # 获取网络接口信息和公网IP
 get_network_info() {
-  echo "🌐 网络接口信息:"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${BOLD_CYAN}🌐 网络接口信息${NC}"
+  print_separator
 
   # 获取所有网络接口信息
   local interfaces=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo)
@@ -1050,7 +1294,7 @@ get_network_info() {
   done
 
   if [ "$has_ip_interfaces" = false ]; then
-    echo "❌ 未检测到任何配置了IP地址的网络接口"
+    error "未检测到任何配置了IP地址的网络接口"
     echo ""
   fi
 
@@ -1101,17 +1345,17 @@ get_network_info() {
 
   # 显示外网IP结果
   if [ -n "$public_ipv4" ]; then
-    echo "✅ 🌍 外网IPv4: $public_ipv4"
+    success "🌍 外网IPv4: $public_ipv4"
     echo "   └─ 数据源: ${fastest_ipv4_url#https://}"
   else
-    echo "❌ 🌍 无法获取外网IPv4地址 (可能无IPv4公网连接)"
+    error "🌍 无法获取外网IPv4地址 (可能无IPv4公网连接)"
   fi
 
   if [ -n "$public_ipv6" ]; then
-    echo "✅ 🌍 外网IPv6: $public_ipv6"
+    success "🌍 外网IPv6: $public_ipv6"
     echo "   └─ 数据源: ${fastest_ipv6_url#https://}"
   else
-    echo "❌ 🌍 无法获取外网IPv6地址 (可能无IPv6公网连接)"
+    error "🌍 无法获取外网IPv6地址 (可能无IPv6公网连接)"
   fi
 
   # 显示DNS信息
@@ -1128,9 +1372,7 @@ get_network_info() {
 # ---------- 一键清理系统 ----------
 clean_system() {
   clear
-  echo "=========================================="
-  echo "         一键清理系统缓存和垃圾文件"
-  echo "=========================================="
+  print_menu_header "一键清理系统缓存和垃圾文件"
 
   local total_cleaned=0
 
@@ -1140,26 +1382,26 @@ clean_system() {
   # 1. APT 包管理器清理
   if command -v apt &> /dev/null; then
     echo "📦 清理 APT 缓存..."
-    apt autoremove -y 2>/dev/null && echo "✅ 已移除孤立包"
-    apt autoclean -y 2>/dev/null && echo "✅ 已清理下载缓存"
-    apt clean -y 2>/dev/null && echo "✅ 已清理包缓存"
+    apt autoremove -y 2>/dev/null && success "已移除孤立包"
+    apt autoclean -y 2>/dev/null && success "已清理下载缓存"
+    apt clean -y 2>/dev/null && success "已清理包缓存"
   fi
 
   # 2. 系统日志清理
   echo ""
   echo "📝 清理系统日志..."
   if command -v journalctl &> /dev/null; then
-    journalctl --vacuum-time=7d 2>/dev/null && echo "✅ 已清理7天前的系统日志"
+    journalctl --vacuum-time=7d 2>/dev/null && success "已清理7天前的系统日志"
   fi
 
   # 3. 临时文件清理
   echo ""
   echo "🗂️  清理临时文件..."
   # 清理 /tmp 目录（排除当前会话）
-  find /tmp -type f -atime +7 -delete 2>/dev/null && echo "✅ 已清理7天前的临时文件"
+  find /tmp -type f -atime +7 -delete 2>/dev/null && success "已清理7天前的临时文件"
 
   # 清理 /var/tmp
-  find /var/tmp -type f -atime +30 -delete 2>/dev/null && echo "✅ 已清理30天前的系统临时文件"
+  find /var/tmp -type f -atime +30 -delete 2>/dev/null && success "已清理30天前的系统临时文件"
 
   # 4. 缩略图缓存清理
   echo ""
@@ -1169,12 +1411,12 @@ clean_system() {
       if [ -d "$user_home" ]; then
         # 清理缩略图缓存
         if [ -d "$user_home/.cache/thumbnails" ]; then
-          rm -rf "$user_home/.cache/thumbnails"/* 2>/dev/null && echo "✅ 已清理用户 $(basename $user_home) 的缩略图缓存"
+          rm -rf "$user_home/.cache/thumbnails"/* 2>/dev/null && success "已清理用户 $(basename $user_home) 的缩略图缓存"
         fi
         # 清理 Firefox 缓存（如果存在）
         if [ -d "$user_home/.cache/mozilla" ]; then
           find "$user_home/.cache/mozilla" -type f -name "*.cache" -mtime +30 -delete 2>/dev/null
-          echo "✅ 已清理用户 $(basename $user_home) 的 Firefox 缓存"
+          success "已清理用户 $(basename $user_home) 的 Firefox 缓存"
         fi
       fi
     done
@@ -1182,7 +1424,7 @@ clean_system() {
 
   # 清理 root 用户缓存
   if [ -d /root/.cache/thumbnails ]; then
-    rm -rf /root/.cache/thumbnails/* 2>/dev/null && echo "✅ 已清理 root 用户缩略图缓存"
+    rm -rf /root/.cache/thumbnails/* 2>/dev/null && success "已清理 root 用户缩略图缓存"
   fi
 
   # 5. Docker 清理（如果安装了 Docker）
@@ -1190,8 +1432,8 @@ clean_system() {
   echo "🐳 检查 Docker 清理..."
   if command -v docker &> /dev/null; then
     echo "🧹 清理 Docker 系统..."
-    docker system prune -f 2>/dev/null && echo "✅ 已清理 Docker 未使用的镜像和容器"
-    docker volume prune -f 2>/dev/null && echo "✅ 已清理 Docker 未使用的卷"
+    docker system prune -f 2>/dev/null && success "已清理 Docker 未使用的镜像和容器"
+    docker volume prune -f 2>/dev/null && success "已清理 Docker 未使用的卷"
   fi
 
   # 6. 媒体服务器缓存清理
@@ -1240,16 +1482,16 @@ clean_system() {
 
     # 7. 插件缓存清理
     if [ -d "/opt/emby/plugins" ]; then
-      find "/opt/emby/plugins" -type f -name "*.cache" -mtime +7 -delete 2>/dev/null && echo "✅ 已清理7天前的 Emby 插件缓存"
+      find "/opt/emby/plugins" -type f -name "*.cache" -mtime +7 -delete 2>/dev/null && success "已清理7天前的 Emby 插件缓存"
     fi
 
     # 8. 临时文件清理
-    find "/tmp" -type f -name "emby_*" -mmin +60 -delete 2>/dev/null && echo "✅ 已清理1小时前的 Emby 临时文件"
+    find "/tmp" -type f -name "emby_*" -mmin +60 -delete 2>/dev/null && success "已清理1小时前的 Emby 临时文件"
 
     # 9. 重启 Emby 服务以清理内存
     if command -v systemctl &> /dev/null && systemctl is-active --quiet emby-server 2>/dev/null; then
       echo "🔄 重启 Emby 服务以清理内存..."
-      systemctl restart emby-server 2>/dev/null && echo "✅ 已重启 Emby 服务，内存已清理"
+      systemctl restart emby-server 2>/dev/null && success "已重启 Emby 服务，内存已清理"
     fi
 
     echo "🎉 Emby 清理完成！"
@@ -1273,7 +1515,7 @@ clean_system() {
     echo "📺 清理 Plex 缓存..."
     # 清理转码缓存
     if [ -d "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode" ]; then
-      find "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode" -type f -mmin +60 -delete 2>/dev/null && echo "✅ 已清理1小时前的 Plex 转码缓存"
+      find "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode" -type f -mmin +60 -delete 2>/dev/null && success "已清理1小时前的 Plex 转码缓存"
     fi
   fi
 
@@ -1282,7 +1524,7 @@ clean_system() {
   echo "💾 清理系统缓存..."
   # 清理 pagecache、dentries 和 inodes
   sync
-  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null && echo "✅ 已清理系统页面缓存"
+  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null && success "已清理系统页面缓存"
 
   # 7. 软件包缓存清理（针对不同发行版）
   echo ""
@@ -1290,28 +1532,28 @@ clean_system() {
 
   # DNF/YUM 缓存清理
   if command -v dnf &> /dev/null; then
-    dnf clean all 2>/dev/null && echo "✅ 已清理 DNF 缓存"
+    dnf clean all 2>/dev/null && success "已清理 DNF 缓存"
   elif command -v yum &> /dev/null; then
-    yum clean all 2>/dev/null && echo "✅ 已清理 YUM 缓存"
+    yum clean all 2>/dev/null && success "已清理 YUM 缓存"
   fi
 
   # Pacman 缓存清理
   if command -v paccache &> /dev/null; then
-    paccache -rk2 2>/dev/null && echo "✅ 已清理 Pacman 缓存（保留2个版本）"
+    paccache -rk2 2>/dev/null && success "已清理 Pacman 缓存（保留2个版本）"
   elif command -v pacman &> /dev/null; then
-    pacman -Sc --noconfirm 2>/dev/null && echo "✅ 已清理 Pacman 缓存"
+    pacman -Sc --noconfirm 2>/dev/null && success "已清理 Pacman 缓存"
   fi
 
   # Zypper 缓存清理
   if command -v zypper &> /dev/null; then
-    zypper clean -a 2>/dev/null && echo "✅ 已清理 Zypper 缓存"
+    zypper clean -a 2>/dev/null && success "已清理 Zypper 缓存"
   fi
 
   # 8. 崩溃报告清理
   echo ""
   echo "📋 清理崩溃报告..."
   if [ -d /var/crash ]; then
-    find /var/crash -type f -mtime +30 -delete 2>/dev/null && echo "✅ 已清理30天前的崩溃报告"
+    find /var/crash -type f -mtime +30 -delete 2>/dev/null && success "已清理30天前的崩溃报告"
   fi
 
   # 9. 磁盘空间统计
@@ -1328,8 +1570,7 @@ clean_system() {
 manage_firewall() {
   while true; do
     clear
-    echo "=================================="
-    echo "         防火墙管理"
+    print_menu_header "防火墙管理"
 
     # 检测可用防火墙
     if command -v ufw >/dev/null 2>&1; then
@@ -1360,8 +1601,8 @@ manage_firewall() {
     fi
 
     # 显示防火墙状态
-    echo "防火墙类型: $fw_name  状态: $status_text"
-    echo "=================================="
+    echo -e "${CYAN}防火墙类型:${NC} ${BOLD_WHITE}$fw_name${NC}  ${CYAN}状态:${NC} ${BOLD_GREEN}$status_text${NC}"
+    print_separator
 
     echo "1) 开启防火墙 (永久生效)"
     echo "2) 关闭防火墙 (永久生效)"
@@ -1385,10 +1626,10 @@ manage_firewall() {
             echo "⚠ iptables 需自行添加规则并保存"
             ;;
           *)
-            echo "❌ 未安装防火墙"
+            error "未安装防火墙"
             ;;
         esac
-        echo "✅ 防火墙已开启（永久）"
+        success "防火墙已开启（永久）"
         read -p "按回车继续..."
         ;;
       2)
@@ -1405,10 +1646,10 @@ manage_firewall() {
             echo "⚠ iptables 需自行清空规则并禁用自启"
             ;;
           *)
-            echo "❌ 未安装防火墙"
+            error "未安装防火墙"
             ;;
         esac
-        echo "✅ 防火墙已关闭（永久）"
+        success "防火墙已关闭（永久）"
         read -p "按回车继续..."
         ;;
       3)
@@ -1425,7 +1666,7 @@ manage_firewall() {
             echo "⚠ iptables 需手动清空规则"
             ;;
           *)
-            echo "❌ 未安装防火墙"
+            error "未安装防火墙"
             ;;
         esac
         read -p "按回车继续..."
@@ -1443,7 +1684,7 @@ manage_firewall() {
             echo "⚠ iptables 需手动重启规则"
             ;;
           *)
-            echo "❌ 未安装防火墙"
+            error "未安装防火墙"
             ;;
         esac
         echo "🔄 防火墙已重启"
@@ -1465,10 +1706,9 @@ change_timezone() {
   while true; do
     clear
     current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
-    echo "=================================="
-    echo "        系统时区管理"
-    echo "        当前时区: $current_tz"
-    echo "=================================="
+    print_menu_header "系统时区管理"
+    echo -e "${CYAN}当前时区:${NC} ${BOLD_GREEN}$current_tz${NC}"
+    print_separator
     echo "1) 中国 (Asia/Shanghai)"
     echo "2) 日本 (Asia/Tokyo)"
     echo "3) 俄罗斯 (Europe/Moscow)"
@@ -1487,17 +1727,17 @@ change_timezone() {
       6)
         read -rp "请输入自定义时区 (如 Europe/London): " tz
         if ! timedatectl list-timezones | grep -q "^$tz$"; then
-          echo "❌ 时区无效"
+          error "时区无效"
           read -p "按回车继续..."
           continue
         fi
         ;;
       0) return ;;
-      *) echo "❌ 无效选项"; read -p "按回车继续..." ; continue ;;
+      *) error "无效选项"; pause ; continue ;;
     esac
 
     sudo timedatectl set-timezone "$tz"
-    echo "✅ 时区已修改为 $tz"
+    success "时区已修改为 $tz"
     read -p "按回车继续..."
     break
   done
@@ -1510,10 +1750,10 @@ change_hostname() {
   read -rp "请输入新的主机名: " new_hostname
   if [ -n "$new_hostname" ]; then
     sudo hostnamectl set-hostname "$new_hostname"
-    echo "✅ 主机名已修改为 $new_hostname"
+    success "主机名已修改为 $new_hostname"
     echo "请重启或重新登录以使更改生效"
   else
-    echo "❌ 主机名不能为空"
+    error "主机名不能为空"
   fi
   read -p "按回车继续..."
 }
@@ -1567,7 +1807,7 @@ change_language() {
       11)
         read -rp "请输入自定义语言 (如 pt_BR.UTF-8): " lang
         if ! locale -a 2>/dev/null | grep -q "^${lang}$"; then
-          echo "❌ 语言无效或未安装，请先安装相应的语言包"
+          error "语言无效或未安装，请先安装相应的语言包"
           echo "💡 提示: 可以使用 'sudo apt install language-pack-${lang%%_*}' 安装"
           pause
           continue
@@ -1575,7 +1815,7 @@ change_language() {
         lang_desc="自定义语言 ($lang)"
         ;;
       0) return ;;
-      *) echo "❌ 无效选项"; pause ; continue ;;
+      *) error "无效选项"; pause ; continue ;;
     esac
 
     # 检查并安装语言包（如果需要）
@@ -1583,13 +1823,13 @@ change_language() {
 
     # 设置系统语言
     if sudo update-locale LANG="$lang" 2>/dev/null; then
-      echo "✅ 系统语言已修改为 $lang_desc ($lang)"
+      success "系统语言已修改为 $lang_desc ($lang)"
       echo "请重启或重新登录以使更改生效"
       echo ""
       echo "💡 重启命令: sudo reboot"
       echo "💡 或重新登录当前用户"
     else
-      echo "❌ 语言设置失败，请检查系统日志"
+      error "语言设置失败，请检查系统日志"
     fi
 
     pause
@@ -1603,7 +1843,7 @@ check_and_install_locale() {
 
   # 检查语言是否已安装
   if locale -a 2>/dev/null | grep -q "^${target_lang}$"; then
-    echo "✅ 语言包已安装"
+    success "语言包已安装"
     return 0
   fi
 
@@ -1615,24 +1855,29 @@ check_and_install_locale() {
     local lang_code="${target_lang%%_*}"
     local install_cmd=""
 
+    local packages=""
     case $lang_code in
-      zh) install_cmd="sudo apt update && sudo apt install -y language-pack-zh-hans language-pack-zh-hant" ;;
-      ja) install_cmd="sudo apt update && sudo apt install -y language-pack-ja" ;;
-      ko) install_cmd="sudo apt update && sudo apt install -y language-pack-ko" ;;
-      de) install_cmd="sudo apt update && sudo apt install -y language-pack-de" ;;
-      fr) install_cmd="sudo apt update && sudo apt install -y language-pack-fr" ;;
-      es) install_cmd="sudo apt update && sudo apt install -y language-pack-es" ;;
-      en) install_cmd="sudo apt update && sudo apt install -y language-pack-en" ;;
-      *) install_cmd="sudo apt update && sudo apt install -y locales-all" ;;
+      zh) packages="language-pack-zh-hans language-pack-zh-hant" ;;
+      ja) packages="language-pack-ja" ;;
+      ko) packages="language-pack-ko" ;;
+      de) packages="language-pack-de" ;;
+      fr) packages="language-pack-fr" ;;
+      es) packages="language-pack-es" ;;
+      en) packages="language-pack-en" ;;
+      *) packages="locales-all" ;;
     esac
 
-    if [ -n "$install_cmd" ]; then
-      echo "执行: $install_cmd"
-      if eval "$install_cmd"; then
-        echo "✅ 语言包安装成功"
+    if [ -n "$packages" ]; then
+      echo "正在更新软件包列表并安装语言包: $packages"
+      # 安全执行命令：先更新，再安装，不使用eval
+      if sudo apt update && sudo apt install -y $packages; then
+        success "语言包安装成功"
         # 重新生成locale
         sudo locale-gen "$target_lang" 2>/dev/null || true
         return 0
+      else
+        error "语言包安装失败"
+        return 1
       fi
     fi
 
@@ -1652,7 +1897,7 @@ check_and_install_locale() {
     if [ -n "$lang_packages" ]; then
       echo "执行: sudo dnf install -y $lang_packages"
       if sudo dnf install -y $lang_packages; then
-        echo "✅ 语言包安装成功"
+        success "语言包安装成功"
         return 0
       fi
     fi
@@ -1697,14 +1942,14 @@ install_qbittorrent_custom() {
     echo "4) v5.1.1"
     echo "5) v5.1.0"
     echo ""
-    echo "=== v5.0.x 系列 ==="
+    echo -e "${BOLD_CYAN}=== v5.0.x 系列 ===${NC}"
     echo "6) v5.0.4"
     echo "7) v5.0.3"
     echo "8) v5.0.2"
     echo "9) v5.0.1"
     echo "10) v5.0.0"
     echo ""
-    echo "=== v4.6.x 系列 (兼容版) ==="
+    echo -e "${BOLD_CYAN}=== v4.6.x 系列 (兼容版) ===${NC}"
     echo "11) v4.6.7"
     echo "12) v4.6.6"
     echo "13) v4.6.5"
@@ -1789,7 +2034,7 @@ install_qbittorrent_custom() {
             return 0
             ;;
         *)
-            echo "❌ 无效选择，返回主菜单"
+            error "无效选择，返回主菜单"
             return 1
             ;;
     esac
@@ -1808,13 +2053,23 @@ install_qbittorrent_custom() {
     fi
 
     # 2. 赋予执行权限并移动
-    chmod +x $APP_NAME
-    sudo mv $APP_NAME $INSTALL_PATH
+    if ! chmod +x $APP_NAME; then
+        error "设置执行权限失败"
+        return 1
+    fi
+    
+    if ! sudo mv $APP_NAME $INSTALL_PATH; then
+        error "移动文件到 $INSTALL_PATH 失败"
+        return 1
+    fi
     echo "[成功] 二进制文件已部署到 $INSTALL_PATH"
 
     # 3. 预创建配置目录
     CONF_DIR="/$TARGET_USER/.config/qBittorrent"
-    mkdir -p $CONF_DIR
+    if ! mkdir -p $CONF_DIR; then
+        error "创建配置目录失败: $CONF_DIR"
+        return 1
+    fi
 
     # 写入基础配置（接受协议并设置端口）
     if [ ! -f "$CONF_DIR/qBittorrent.conf" ]; then
@@ -1859,7 +2114,7 @@ EOF
     echo "👉 请运行以下命令查看您的【随机初始密码】："
     echo "   journalctl -u $APP_NAME | grep password"
     echo "-------------------------------------------------------"
-    echo "登录后请务必在 WebUI 设置中将密码修改为: txruiadmin"
+    echo "⚠️  安全提示: 登录后请务必在 WebUI 设置中将密码修改为强密码！"
 }
 
 # ---------- 安装 qBittorrent ----------
@@ -1868,9 +2123,9 @@ install_qbittorrent() {
     CONF_FILE="$CONFIG_DIR/qBittorrent.conf"
 
     # 检测系统默认安装的 qBittorrent 版本
-    echo "==== 检测 qBittorrent 版本 ===="
+    info "检测 qBittorrent 版本..."
     if command -v apt &> /dev/null; then
-        echo "正在查询系统仓库中的 qBittorrent 版本..."
+        info "正在查询系统仓库中的 qBittorrent 版本..."
         QB_INFO=$(apt show qbittorrent-nox 2>/dev/null | grep -E "Version|Description" | head -2)
         if [ $? -eq 0 ] && [ -n "$QB_INFO" ]; then
             echo "系统默认安装版本信息："
@@ -1884,32 +2139,32 @@ install_qbittorrent() {
         echo "未检测到 apt 包管理器"
         echo ""
     fi
-    echo "==== 更新系统 ===="
+    info "更新系统..."
     apt update && apt upgrade -y
     apt install -y software-properties-common wget nano curl gnupg lsb-release
 
-    echo "==== 安装 qBittorrent-nox ===="
+    info "安装 qBittorrent-nox..."
     if [ -f /etc/lsb-release ]; then
         add-apt-repository ppa:qbittorrent-team/qbittorrent-stable -y
         apt update
     fi
     apt install -y qbittorrent-nox
 
-    echo "==== 生成或修改配置文件 ===="
+    info "生成或修改配置文件..."
     mkdir -p $CONFIG_DIR
 
     # 判断是否已有配置文件
     if [ -f "$CONF_FILE" ]; then
-        echo "已有配置文件，更新为完整自定义配置..."
+        info "已有配置文件，更新为完整自定义配置..."
     else
-        echo "首次启动，生成配置文件..."
+        info "首次启动，生成配置文件..."
         qbittorrent-nox &
         sleep 5
         kill $!
     fi
 
 
-    echo "==== 创建 systemd 服务 ===="
+    info "创建 systemd 服务..."
     SERVICE_FILE="/etc/systemd/system/qbittorrent.service"
     cat > $SERVICE_FILE <<EOF
 [Unit]
@@ -1929,211 +2184,11 @@ EOF
     systemctl daemon-reload
     systemctl enable --now qbittorrent
 
-    echo "==== 安装/更新完成 ===="
-    echo "WebUI 地址：http://$(curl -s ifconfig.me):8080"
-    echo "用户名：admin"
-    echo "密码：adminadmin"
+    success "安装/更新完成"
+    echo -e "${BOLD_CYAN}WebUI 地址：${NC}${BOLD_GREEN}http://$(curl -s ifconfig.me):8080${NC}"
+    echo -e "${CYAN}用户名：${NC}${BOLD_WHITE}admin${NC}"
+    warn "密码：请查看配置文件 $CONF_FILE 或首次登录后修改密码"
     echo "WebUI 已设置为中文，服务已配置开机自启。"
-}
-
-# --- ServerStatus 客户端管理 (选项 12 增强版) ---
-manage_ss_client() {
-    SERVER_IP="165.99.43.198"
-    CLIENT_PATH=$(pwd)/client-linux.py
-
-    while true; do
-        echo "-----------------------------------------------"
-        echo "   ServerStatus 客户端管理工具 (ID前缀: s)"
-        echo "-----------------------------------------------"
-        echo "1. 安装/更新 客户端"
-        echo "2. 彻底卸载 客户端"
-        echo "3. 查看运行状态"
-        echo "0. 返回主菜单"
-        echo "-----------------------------------------------"
-        read -p "请选择操作 [0-3]: " ss_choice
-
-        case $ss_choice in
-            1)
-                echo "示例：输入 05 则 ID 为 s05"
-                read -p "请输入 ID 数字部分 (默认 04): " USER_NUM
-                USER_NUM=${USER_NUM:-04}
-                USER_ID="s${USER_NUM}"
-
-                if ! safe_download 'https://raw.githubusercontent.com/cppla/ServerStatus/master/clients/client-linux.py' 'client-linux.py' 'ServerStatus 客户端脚本'; then
-                    return 1
-                fi
-                
-                echo "正在清理旧进程..."
-                pkill -f client-linux.py >/dev/null 2>&1
-
-                echo "正在启动客户端..."
-                nohup python3 "${CLIENT_PATH}" SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &
-                
-                echo "正在设置开机自启..."
-                (crontab -l 2>/dev/null | grep -v "client-linux.py"; echo "@reboot /usr/bin/python3 ${CLIENT_PATH} SERVER=${SERVER_IP} USER=${USER_ID} >/dev/null 2>&1 &") | crontab -
-                
-                echo -e "${GREEN}✅ 安装成功！最终 ID 为: ${USER_ID}${NC}"
-                ;;
-            2)
-                echo "正在停止进程..."
-                pkill -f client-linux.py >/dev/null 2>&1
-                echo "正在移除开机自启..."
-                crontab -l 2>/dev/null | grep -v "client-linux.py" | crontab -
-                echo "正在删除脚本文件..."
-                rm -f client-linux.py
-                echo -e "${GREEN}✅ 卸载完成！${NC}"
-                ;;
-            3)
-                echo "-----------------------------------------------"
-                echo "🔍 进程状态："
-                if ps -ef | grep "client-linux.py" | grep -v grep > /dev/null; then
-                    ps -ef | grep "client-linux.py" | grep -v grep
-                else
-                    echo -e "${RED}❌ 客户端未在运行${NC}"
-                fi
-                echo ""
-                echo "🔍 开机自启任务："
-                crontab -l | grep "client-linux.py" || echo -e "${RED}❌ 未发现自启任务${NC}"
-                echo "-----------------------------------------------"
-                read -p "按回车继续..."
-                ;;
-            0) break ;;
-            *) echo "无效选项" ;;
-        esac
-    done
-}
-
-# --- ServerStatus 服务端管理 (选项 13 增强版) ---
-manage_ss_server() {
-    # 强制路径与配置定义
-    CONFIG_FILE="/opt/serverstatus/serverstatus-config.json"
-    
-    if [ ! -f "$CONFIG_FILE" ]; then
-        error "未找到配置文件: $CONFIG_FILE"
-        read -p "按回车返回..."
-        return
-    fi
-
-    # 直接将您的逻辑适配为内部函数
-    restart_docker() {
-        docker restart serverstatus >/dev/null 2>&1
-        echo -e "${GREEN}🔄 配置已应用，容器已重启${NC}"
-    }
-
-    list_servers() {
-        echo -e "${GREEN}--- 当前 Servers 节点列表 ---${NC}"
-        sed -n '/"servers": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"username"|"name"|"type"|"location"' | sed 'N;N;N;s/\n/ /g' | awk -F'"' '{print "ID: "$4" | 名称: "$8" | 类型: "$12" | 位置: "$16}'
-    }
-
-    list_monitors() {
-        echo -e "${GREEN}--- 当前 Monitors 监控列表 ---${NC}"
-        sed -n '/"monitors": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"host"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 地址: "$8}'
-    }
-
-    list_ssl() {
-        echo -e "${GREEN}--- 当前 SSLCerts 证书检测列表 ---${NC}"
-        sed -n '/"sslcerts": \[/,/\]/p' "$CONFIG_FILE" | grep -E '"name"|"domain"' | sed 'N;s/\n/ /' | awk -F'"' '{print "名称: "$4" | 域名: "$8}'
-    }
-
-    # 进入您的 config_manager.sh 逻辑循环
-    while true; do
-        clear
-        echo -e "${YELLOW}===============================================${NC}"
-        echo -e "${GREEN}       ServerStatus 全能管理脚本${NC}"
-        echo -e "${YELLOW}===============================================${NC}"
-        echo "1. 服务器节点管理 (Servers)"
-        echo "2. 延迟测试管理 (Monitors)"
-        echo "3. SSL证书检测管理 (SSLCerts)"
-        echo "0. 退出并返回主菜单"
-        echo "-----------------------------------------------"
-        read -p "请选择大项 [0-3]: " main_choice
-
-        case $main_choice in
-            1)
-                while true; do
-                    echo -e "\n [Servers]: 1.列表 2.添加 3.修改 4.删除 5.返回"
-                    read -p " 请选择: " sub
-                    case $sub in
-                        1) list_servers ;;
-                        2)
-                           read -p "数字ID (如05): " UNUM; UI="s${UNUM}"; read -p "名称: " UNAME; read -p "类型: " UTYPE; read -p "位置: " ULOC
-                           NODE="        {\n            \"username\": \"$UI\",\n            \"name\": \"$UNAME\",\n            \"type\": \"${UTYPE:-kvm}\",\n            \"host\": \"$UNAME\",\n            \"location\": \"$ULOC\",\n            \"password\": \"USER_DEFAULT_PASSWORD\",\n            \"monthstart\": 1\n        },"
-                           sed -i "/\"servers\": \[/a \\$NODE" "$CONFIG_FILE" && restart_docker ;;
-                        3)
-                           list_servers; read -p "输入要修改的ID (如 s01): " EID
-                           if [ ! -z "$EID" ] && grep -q "\"username\": \"$EID\"" "$CONFIG_FILE"; then
-                               read -p "新名称: " EN; read -p "新类型: " ET; read -p "新位置: " EL
-                               # 这里是您强调的逻辑：EN、ET、EL 依次判断修改
-                               [ ! -z "$EN" ] && { 
-                                   sed -i "/\"username\": \"$EID\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$EN\"/" "$CONFIG_FILE"
-                                   sed -i "/\"username\": \"$EID\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$EN\"/" "$CONFIG_FILE"
-                               }
-                               [ ! -z "$ET" ] && sed -i "/\"username\": \"$EID\"/,/\"type\":/ s/\"type\": \".*\"/\"type\": \"$ET\"/" "$CONFIG_FILE"
-                               [ ! -z "$EL" ] && sed -i "/\"username\": \"$EID\"/,/\"location\":/ s/\"location\": \".*\"/\"location\": \"$EL\"/" "$CONFIG_FILE"
-                               restart_docker
-                           fi ;;
-                        4)
-                           list_servers; read -p "删除ID: " DID
-                           L=$(grep -n "\"username\": \"$DID\"" "$CONFIG_FILE" | cut -d: -f1)
-                           [ ! -z "$L" ] && { sed -i "$((L - 1)),$((L + 7))d" "$CONFIG_FILE"; restart_docker; } ;;
-                        5) break ;;
-                    esac
-                done ;;
-            2)
-                while true; do
-                    echo -e "\n [Monitors]: 1.列表 2.添加 3.修改 4.删除 5.返回"
-                    read -p " 请选择: " sub
-                    case $sub in
-                        1) list_monitors ;;
-                        2)
-                           read -p "监控显示名称: " MN; read -p "监控地址: " MH
-                           M_NODE="        {\n            \"name\": \"$MN\",\n            \"host\": \"$MH\",\n            \"interval\": 600,\n            \"type\": \"https\"\n        },"
-                           sed -i "/\"monitors\": \[/a \\$M_NODE" "$CONFIG_FILE" && restart_docker ;;
-                        3)
-                           list_monitors; read -p "要修改的监控名称: " MON
-                           if [ ! -z "$MON" ] && grep -q "\"name\": \"$MON\"" "$CONFIG_FILE"; then
-                               read -p "新名称: " MN; read -p "新地址: " MH
-                               [ ! -z "$MN" ] && sed -i "/\"name\": \"$MON\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$MN\"/" "$CONFIG_FILE"
-                               TNAME=${MN:-$MON}
-                               [ ! -z "$MH" ] && sed -i "/\"name\": \"$TNAME\"/,/\"host\":/ s/\"host\": \".*\"/\"host\": \"$MH\"/" "$CONFIG_FILE"
-                               restart_docker
-                           fi ;;
-                        4)
-                           list_monitors; read -p "删除监控名称: " DM
-                           LN=$(grep -n "\"name\": \"$DM\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
-                           [ ! -z "$LN" ] && { sed -i "$((LN - 1)),$((LN + 4))d" "$CONFIG_FILE"; restart_docker; } ;;
-                        5) break ;;
-                    esac
-                done ;;
-            3)
-                while true; do
-                    echo -e "\n [SSLCerts]: 1.列表 2.添加 3.修改 4.删除 5.返回"
-                    read -p " 请选择: " sub
-                    case $sub in
-                        1) list_ssl ;;
-                        2)
-                           read -p "名称: " SN; read -p "域名 (带https://): " SD; read -p "端口 (默认443): " SP
-                           S_NODE="        {\n            \"name\": \"$SN\",\n            \"domain\": \"$SD\",\n            \"port\": ${SP:-443},\n            \"interval\": 7200,\n            \"callback\": \"https://yourSMSurl\"\n        },"
-                           sed -i "/\"sslcerts\": \[/a \\$S_NODE" "$CONFIG_FILE" && restart_docker ;;
-                        3)
-                           list_ssl; read -p "修改证书名称: " ON
-                           if [ ! -z "$ON" ] && grep -q "\"name\": \"$ON\"" "$CONFIG_FILE"; then
-                               read -p "新名称: " NN; read -p "新域名: " ND
-                               [ ! -z "$NN" ] && sed -i "/\"name\": \"$ON\"/,/\"name\":/ s/\"name\": \".*\"/\"name\": \"$NN\"/" "$CONFIG_FILE"
-                               TNAME=${NN:-$ON}
-                               [ ! -z "$ND" ] && sed -i "/\"name\": \"$TNAME\"/,/\"domain\":/ s/\"domain\": \".*\"/\"domain\": \"$ND\"/" "$CONFIG_FILE"
-                               restart_docker
-                           fi ;;
-                        4)
-                           list_ssl; read -p "删除证书名称: " DS
-                           SLN=$(grep -n "\"name\": \"$DS\"" "$CONFIG_FILE" | head -n 1 | cut -d: -f1)
-                           [ ! -z "$SLN" ] && { sed -i "$((SLN - 1)),$((SLN + 5))d" "$CONFIG_FILE"; restart_docker; } ;;
-                        5) break ;;
-                    esac
-                done ;;
-            0) break ;;
-        esac
-    done
 }
 
 # ---------- 系统环境检查 ----------
@@ -2208,81 +2263,71 @@ while true; do
       DISK_TOTAL="未知"
     fi
 
-    echo "==============================================="
-    echo "      田小瑞一键脚本 $SCRIPT_VERSION"
-    echo "      操作系统：($OS_VERSION)"
-    echo -e "      $CPU_CORES核  $MEM_TOTAL内存  $DISK_TOTAL存储  $SWAP_TOTAL虚拟内存"
-    echo "==============================================="
-    echo "【系统优化】"
-    echo "1) 虚拟内存管理           2) 镜像源管理"
-    echo "3) BBR 管理               4) BBR 优化"
+    echo -e "${BOLD_CYAN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD_CYAN}║${NC} ${BOLD_WHITE}                   田小瑞一键脚本 ${BOLD_GREEN}$SCRIPT_VERSION${NC} ${BOLD_WHITE}                      ${BOLD_CYAN}║${NC}"
+    echo -e "${BOLD_CYAN}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${BOLD_CYAN}║${NC} ${CYAN}操作系统：${BOLD_WHITE}$OS_VERSION${NC} ${BOLD_CYAN}$(printf '%*s' $((67 - ${#OS_VERSION} - 5)) '')║${NC}"
+    echo -e "${BOLD_CYAN}║${NC} ${CYAN}系统配置：${BOLD_GREEN}$CPU_CORES核${NC}  ${BOLD_BLUE}$MEM_TOTAL内存${NC}  ${BOLD_MAGENTA}$DISK_TOTAL存储${NC}  ${BOLD_YELLOW}$SWAP_TOTAL虚拟内存${NC} ${BOLD_CYAN}║${NC}"
+    echo -e "${BOLD_CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "【应用安装】"
-    echo "5) 流媒体测试             6) 安装宝塔面板"
-    echo "7) 安装 DPanel 面板       8) 服务器详细信息"
+    print_section "系统优化"
+    print_option_pair "1" "虚拟内存管理" "2" "镜像源管理"
     echo ""
-    echo "【系统维护】"
-    echo "9) 一键清理日志和缓存"
-    echo "10) 系统管理"
+    print_section "应用安装"
+    print_option_pair "3" "流媒体测试" "4" "安装宝塔面板"
+    print_option_pair "5" "安装 DPanel 面板" "6" "服务器详细信息"
     echo ""
-    echo "【下载工具】"
-	echo "11) 安装系统默认版本QB"
-	echo "12) 选择安装版本QB"
+    print_section "系统维护"
+    print_option_pair "7" "一键清理日志和缓存" "8" "系统管理"
     echo ""
-    echo "【监控工具】"
-	echo "13) ServerStatus 客户端"
-    echo "14) ServerStatus 服务端"
+    print_section "下载工具"
+    print_option_pair "9" "安装系统默认版本QB" "10" "选择安装版本QB"
     echo ""
-    echo "【系统工具】"
-    echo "15) SSH密钥管理"
-    echo "16) 网络诊断工具"
-    echo "17) DNS配置管理"
-    echo "18) Docker管理"
-    echo "19) 数据库管理"
-    echo "20) Python环境管理"
+    print_section "系统工具"
+    print_option_pair "11" "SSH密钥管理" "12" "网络诊断工具"
+    print_option_pair "13" "DNS配置管理" "14" "Docker管理"
+    print_option_pair "15" "数据库管理" "16" "Python环境管理"
     echo ""
-    echo "【安全工具】"
-    echo "21) Fail2Ban管理"
-    echo "22) SSL证书助手"
+    print_section "安全工具"
+    print_option_pair "17" "Fail2Ban管理" "18" "SSL证书助手"
     echo ""
-    echo "【网络增强】"
-    echo "23) GitHub加速"
-    echo "24) SSH端口修改"
-    echo "25) ICMP响应控制"
-    echo "26) NTP时间同步"
+    print_section "网络增强"
+    print_option_pair "19" "GitHub加速" "20" "SSH端口修改"
+    print_option_pair "21" "ICMP响应控制" "22" "NTP时间同步"
     echo ""
-    echo "【面板工具】"
-    echo "27) CasaOS面板"
+    print_section "面板工具"
+    print_option "23" "CasaOS面板"
     echo ""
-    echo "【系统更新】"
-    echo "28) 脚本自更新"
+    print_section "快捷工具"
+    print_option "24" "快捷工具菜单（BBR/面板/网络测试/群辉/PVE等）"
     echo ""
-    echo "0) 退出"
-    echo "==============================================="
-    read -rp "请选择: " choice
+    print_separator
+    echo -e "  ${BOLD_RED}0)${NC} ${RED}退出${NC}"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+    read -r choice
     case "$choice" in
       1) manage_swap_menu ;;
       2) manage_sources_menu ;;
-      3) manage_bbr ;;
-      4) optimize_bbr ;;
-      5) streaming_test ;;
-      6) install_bt_panel ;;
-      7) install_dpanel ;;
-      8) system_info ;;
-      9) clean_system ;;
-      10)
+      3) streaming_test ;;
+      4) install_bt_panel ;;
+      5) install_dpanel ;;
+      6) system_info ;;
+      7) clean_system ;;
+      8)
   while true; do
     clear
-    echo "=================================="
-    echo "         系统管理"
-    echo "=================================="
-    echo "1) 防火墙管理"
-    echo "2) 修改系统时区"
-    echo "3) 修改主机名"
-    echo "4) 修改 Host"
-    echo "5) 切换系统语言"
-    echo "0) 返回主菜单"
-    read -rp "请输入选项: " sys_choice
+    print_menu_header "系统管理"
+    print_option "1" "防火墙管理"
+    print_option "2" "修改系统时区"
+    print_option "3" "修改主机名"
+    print_option "4" "修改 Host"
+    print_option "5" "切换系统语言"
+    print_separator
+    echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请输入选项: ${NC}"
+    read -r sys_choice
     case $sys_choice in
       1) manage_firewall ;;
       2) change_timezone ;;
@@ -2294,32 +2339,30 @@ while true; do
     esac
   done
   ;;
-  	 11)
-        echo "==== 开始安装 qBittorrent-nox ===="
+      9)
+        info "开始安装 qBittorrent-nox..."
         # 调用函数或直接插入完整脚本
         install_qbittorrent
   ;;
-      0) ok "退出脚本"; exit 0 ;;
-      12)
-        echo "==== 开始自定义安装 qBittorrent ===="
+      10)
+        info "开始自定义安装 qBittorrent..."
         install_qbittorrent_custom
         ;;
-      13) manage_ss_client ;;
-      14) manage_ss_server ;;
-      15) ssh_key_management ;;
-      16) network_diagnostics ;;
-      17) dns_management ;;
-      18) docker_management ;;
-      19) database_management ;;
-      20) python_management ;;
-      21) fail2ban_management ;;
-      22) ssl_certificate_helper ;;
-      23) github_acceleration ;;
-      24) ssh_port_modification ;;
-      25) icmp_control ;;
-      26) ntp_sync ;;
-      27) casaos_panel ;;
-      28) script_self_update ;;
+      11) ssh_key_management ;;
+      12) network_diagnostics ;;
+      13) dns_management ;;
+      14) docker_management ;;
+      15) database_management ;;
+      16) python_management ;;
+      17) fail2ban_management ;;
+      18) ssl_certificate_helper ;;
+      19) github_acceleration ;;
+      20) ssh_port_modification ;;
+      21) icmp_control ;;
+      22) ntp_sync ;;
+      23) casaos_panel ;;
+      24) quick_tools_menu ;;
+      0) ok "退出脚本"; exit 0 ;;
       *) warn "无效选项"; sleep 1 ;;
     esac
   done
@@ -2354,7 +2397,7 @@ ssh_key_management() {
         fi
 
         ssh-keygen -t rsa -b 4096 -f "$key_path" -N ""
-        echo "✅ SSH 密钥对已生成:"
+        success "SSH 密钥对已生成:"
         echo "私钥: $key_path"
         echo "公钥: ${key_path}.pub"
         pause
@@ -2382,7 +2425,7 @@ ssh_key_management() {
         fi
 
         chmod 600 "$HOME/.ssh/authorized_keys"
-        echo "✅ 公钥已导入到 authorized_keys"
+        success "公钥已导入到 authorized_keys"
         pause
         ;;
       4)
@@ -2416,9 +2459,9 @@ ssh_key_management() {
           read -rp "请输入要删除的密钥文件名 (如 id_rsa): " key_to_delete
           if [ -n "$key_to_delete" ] && [ -f "$HOME/.ssh/$key_to_delete" ]; then
             rm -f "$HOME/.ssh/$key_to_delete" "$HOME/.ssh/${key_to_delete}.pub"
-            echo "✅ 已删除密钥: $key_to_delete"
+            success "已删除密钥: $key_to_delete"
           else
-            echo "❌ 密钥文件不存在"
+            error "密钥文件不存在"
           fi
         else
           echo "SSH 目录不存在"
@@ -2435,94 +2478,99 @@ ssh_key_management() {
 network_diagnostics() {
   while true; do
     clear
-    echo "=========================================="
-    echo "         网络诊断工具"
-    echo "=========================================="
-    echo "1) Ping 测试"
-    echo "2) Traceroute 路由跟踪"
-    echo "3) DNS 查询"
-    echo "4) 端口连接测试"
-    echo "5) 网络速度测试"
-    echo "6) 查看网络连接"
-    echo "0) 返回主菜单"
-    echo "------------------------------------------"
-    read -rp "请选择: " choice
+    print_menu_header "网络诊断工具"
+    print_option "1" "Ping 测试"
+    print_option "2" "Traceroute 路由跟踪"
+    print_option "3" "DNS 查询"
+    print_option "4" "端口连接测试"
+    print_option "5" "网络速度测试"
+    print_option "6" "查看网络连接"
+    print_separator
+    echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+    read -r choice
 
     case $choice in
       1)
-        read -rp "请输入要 ping 的主机 (默认: 8.8.8.8): " target
+        question "请输入要 ping 的主机 (默认: 8.8.8.8): "
+        read -r target
         target=${target:-8.8.8.8}
-        echo "正在 ping $target..."
+        info "正在 ping $target..."
         ping -c 4 "$target"
         pause
         ;;
       2)
-        read -rp "请输入要跟踪的路由主机 (默认: google.com): " target
+        question "请输入要跟踪的路由主机 (默认: google.com): "
+        read -r target
         target=${target:-google.com}
-        echo "正在跟踪到 $target 的路由..."
+        info "正在跟踪到 $target 的路由..."
         if command -v traceroute &> /dev/null; then
           traceroute "$target"
         elif command -v tracepath &> /dev/null; then
           tracepath "$target"
         else
-          echo "❌ 未找到 traceroute 或 tracepath 命令"
+          error "未找到 traceroute 或 tracepath 命令"
         fi
         pause
         ;;
       3)
-        read -rp "请输入要查询的域名 (默认: google.com): " domain
+        question "请输入要查询的域名 (默认: google.com): "
+        read -r domain
         domain=${domain:-google.com}
-        echo "正在查询 $domain 的 DNS 记录..."
+        info "正在查询 $domain 的 DNS 记录..."
         if command -v nslookup &> /dev/null; then
           nslookup "$domain"
         elif command -v dig &> /dev/null; then
           dig "$domain"
         else
-          echo "❌ 未找到 nslookup 或 dig 命令"
+          error "未找到 nslookup 或 dig 命令"
         fi
         pause
         ;;
       4)
-        read -rp "请输入主机: " host
-        read -rp "请输入端口 (默认: 80): " port
+        question "请输入主机: "
+        read -r host
+        question "请输入端口 (默认: 80): "
+        read -r port
         port=${port:-80}
-        echo "正在测试 $host:$port 的连接..."
+        info "正在测试 $host:$port 的连接..."
         if command -v nc &> /dev/null; then
           nc -zv "$host" "$port"
         elif command -v telnet &> /dev/null; then
           timeout 5 telnet "$host" "$port"
         else
-          echo "❌ 未找到 nc 或 telnet 命令"
+          error "未找到 nc 或 telnet 命令"
         fi
         pause
         ;;
       5)
-        echo "网络速度测试..."
+        info "网络速度测试..."
         if command -v curl &> /dev/null; then
-          echo "下载速度测试 (从 cachefly):"
-          curl -s -w "下载速度: %{speed_download} bytes/sec\n总时间: %{time_total}s\n" -o /dev/null http://cachefly.cachefly.net/100mb.test
+          echo -e "${CYAN}下载速度测试 (从 cachefly):${NC}"
+          curl -s -w "${GREEN}下载速度: %{speed_download} bytes/sec\n总时间: %{time_total}s${NC}\n" -o /dev/null http://cachefly.cachefly.net/100mb.test
         else
-          echo "❌ 需要 curl 命令来进行速度测试"
+          error "需要 curl 命令来进行速度测试"
         fi
         pause
         ;;
       6)
-        echo "当前网络连接:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "网络连接统计:"
-        netstat -tuln 2>/dev/null | wc -l | xargs echo "活动连接数:"
+        echo -e "${BOLD_CYAN}当前网络连接:${NC}"
+        print_separator
+        echo -e "${BOLD_CYAN}网络连接统计:${NC}"
+        netstat -tuln 2>/dev/null | wc -l | xargs -I {} echo -e "${CYAN}活动连接数:${NC} ${BOLD_GREEN}{}${NC}"
         echo ""
-        echo "监听端口:"
+        echo -e "${BOLD_CYAN}监听端口:${NC}"
         netstat -tlnp 2>/dev/null | head -10
         echo ""
-        echo "网络接口流量:"
+        echo -e "${BOLD_CYAN}网络接口流量:${NC}"
         if command -v ip &> /dev/null; then
           ip -s link show | head -20
         fi
         pause
         ;;
       0) return ;;
-      *) echo "❌ 无效选项"; pause ;;
+      *) error "无效选项"; pause ;;
     esac
   done
 }
@@ -2531,73 +2579,75 @@ network_diagnostics() {
 dns_management() {
   while true; do
     clear
-    echo "=========================================="
-    echo "         DNS 配置管理"
-    echo "=========================================="
+    print_menu_header "DNS 配置管理"
 
-    echo "当前 DNS 配置:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "${BOLD_CYAN}当前 DNS 配置:${NC}"
+    print_separator
     if [ -f /etc/resolv.conf ]; then
       cat /etc/resolv.conf
     else
-      echo "未找到 resolv.conf 文件"
+      warn "未找到 resolv.conf 文件"
     fi
     echo ""
 
-    echo "请选择操作:"
-    echo "1) 切换到阿里云 DNS"
-    echo "2) 切换到腾讯云 DNS"
-    echo "3) 切换到华为云 DNS"
-    echo "4) 切换到 Google DNS"
-    echo "5) 切换到 Cloudflare DNS"
-    echo "6) 自定义 DNS"
-    echo "7) 恢复默认 DNS"
-    echo "0) 返回主菜单"
-    echo "------------------------------------------"
-    read -rp "请选择: " choice
+    echo -e "${BOLD_YELLOW}请选择操作:${NC}"
+    print_option "1" "切换到阿里云 DNS"
+    print_option "2" "切换到腾讯云 DNS"
+    print_option "3" "切换到华为云 DNS"
+    print_option "4" "切换到 Google DNS"
+    print_option "5" "切换到 Cloudflare DNS"
+    print_option "6" "自定义 DNS"
+    print_option "7" "恢复默认 DNS"
+    print_separator
+    echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
+    print_separator
+    echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+    read -r choice
 
     case $choice in
       1)
-        echo "切换到阿里云 DNS..."
+        info "切换到阿里云 DNS..."
         configure_dns "223.5.5.5" "223.6.6.6"
         ;;
       2)
-        echo "切换到腾讯云 DNS..."
+        info "切换到腾讯云 DNS..."
         configure_dns "119.28.28.28" "182.254.116.116"
         ;;
       3)
-        echo "切换到华为云 DNS..."
+        info "切换到华为云 DNS..."
         configure_dns "122.112.208.1" "122.112.208.2"
         ;;
       4)
-        echo "切换到 Google DNS..."
+        info "切换到 Google DNS..."
         configure_dns "8.8.8.8" "8.8.4.4"
         ;;
       5)
-        echo "切换到 Cloudflare DNS..."
+        info "切换到 Cloudflare DNS..."
         configure_dns "1.1.1.1" "1.0.0.1"
         ;;
       6)
-        read -rp "请输入主 DNS 服务器: " primary_dns
-        read -rp "请输入备 DNS 服务器 (可选): " secondary_dns
+        question "请输入主 DNS 服务器: "
+        read -r primary_dns
+        question "请输入备 DNS 服务器 (可选): "
+        read -r secondary_dns
         if [ -n "$primary_dns" ]; then
           configure_dns "$primary_dns" "$secondary_dns"
         else
-          echo "❌ 主 DNS 服务器不能为空"
+          error "主 DNS 服务器不能为空"
           pause
           continue
         fi
         ;;
       7)
-        echo "恢复系统默认 DNS..."
+        info "恢复系统默认 DNS..."
         # 尝试恢复原始配置
         if [ -f /etc/resolv.conf.backup ]; then
           cp /etc/resolv.conf.backup /etc/resolv.conf
-          echo "✅ 已恢复原始 DNS 配置"
+          success "已恢复原始 DNS 配置"
         else
           # 设置一些常见的默认 DNS
           configure_dns "8.8.8.8" "8.8.4.4"
-          echo "✅ 已设置为默认 DNS (Google)"
+          success "已设置为默认 DNS (Google)"
         fi
         ;;
       0) return ;;
@@ -3926,6 +3976,9 @@ casaos_panel() {
   echo "CasaOS 是一个简单易用的家庭云系统..."
   echo ""
 
+  warn "⚠️  安全警告: 即将执行远程安装脚本"
+  echo "脚本来源: https://get.casaos.io"
+  echo "此操作将从互联网下载并执行CasaOS官方安装脚本，可能会修改系统配置。"
   read -rp "确定要安装 CasaOS 吗? (y/N): " install_confirm
   if [[ $install_confirm =~ ^[Yy]$ ]]; then
     echo "开始安装 CasaOS..."
@@ -3951,55 +4004,685 @@ casaos_panel() {
   pause
 }
 
-# ---------- 脚本自更新 ----------
-script_self_update() {
+# ---------- 快捷工具菜单 ----------
+quick_tools_menu() {
+  while true; do
   clear
   echo "=========================================="
-  echo "         脚本自更新"
+    echo "         快捷工具菜单"
   echo "=========================================="
+    echo ""
+    echo "【BBR优化】"
+    echo "1) TCPX BBR优化             2) BBR优化脚本"
+    echo ""
+    echo "【面板安装】"
+    echo "3) 哪吒面板                 4) 3x-ui面板"
+    echo "5) h-ui面板                 6) s-ui面板"
+    echo "7) MCSManager面板"
+    echo ""
+    echo "【网络测试】"
+    echo "8) 三网回程延迟测试         9) 三网回程线路测试"
+    echo "10) 三网测速脚本            11) IP质量检测"
+    echo ""
+    echo "【系统工具】"
+    echo "12) 安装Rclone              13) 端口转发工具"
+    echo "14) 安装NFS客户端           15) 查看目录占用"
+    echo "16) 修改虚拟内存使用率      17) 安装基础工具包（apt）"
+    echo "18) 安装基础工具包（yum）   19) 关闭宝塔面板SSL"
+    echo ""
+    echo "【群辉工具】"
+    echo "20) 群辉查看状态            21) 群辉查看硬盘温度"
+    echo "22) 群辉查看目录权限        23) 群辉修改root密码"
+    echo "24) 群辉改数据块（32768）   25) 群辉恢复数据块（4096）"
+    echo "26) 群辉超级权限"
+    echo ""
+    echo "【PVE工具】"
+    echo "27) PVE一键命令             28) 进入PVE磁盘目录"
+    echo ""
+    echo "【系统重装】"
+    echo "29) DD重装系统"
+    echo ""
+    echo "0) 返回主菜单"
+    echo "=========================================="
+    read -rp "请选择: " choice
+    
+    case "$choice" in
+      1) install_tcpx_bbr ;;
+      2) install_bbr_optimize ;;
+      3) install_nezha ;;
+      4) install_3xui ;;
+      5) install_hui ;;
+      6) install_sui ;;
+      7) install_mcsmanager ;;
+      8) test_besttrace ;;
+      9) test_mtr_trace ;;
+      10) test_superspeed ;;
+      11) test_ip_quality ;;
+      12) install_rclone ;;
+      13) install_natcfg ;;
+      14) install_nfs_client ;;
+      15) show_directory_usage ;;
+      16) modify_swappiness ;;
+      17) install_apt_tools ;;
+      18) install_yum_tools ;;
+      19) disable_bt_ssl ;;
+      20) synology_status ;;
+      21) synology_disk_temp ;;
+      22) synology_dir_permissions ;;
+      23) synology_change_root_pwd ;;
+      24) synology_set_stripe_32768 ;;
+      25) synology_set_stripe_4096 ;;
+      26) synology_super_permission ;;
+      27) install_pve_source ;;
+      28) enter_pve_images ;;
+      29) dd_reinstall ;;
+      0) return ;;
+      *) error "无效选项"; pause ;;
+    esac
+  done
+}
 
-  SCRIPT_URL="https://raw.githubusercontent.com/txrui/script/refs/heads/main/txrui.sh"
-  SCRIPT_PATH="$(readlink -f "$0")"
-  SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
-  SCRIPT_NAME="$(basename "$SCRIPT_PATH")"
-
-  echo "当前脚本位置: $SCRIPT_PATH"
-  echo "当前版本: $SCRIPT_VERSION"
-  echo ""
-
-  read -rp "确定要更新脚本吗? (y/N): " update_confirm
-  if [[ $update_confirm =~ ^[Yy]$ ]]; then
-    echo "正在检查更新..."
-
-    # 备份当前脚本
-    backup_file="$SCRIPT_DIR/${SCRIPT_NAME}.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$SCRIPT_PATH" "$backup_file"
-    echo "✅ 备份已创建: $backup_file"
-
-    # 下载新版本
-    if curl -fsSL "$SCRIPT_URL" -o "${SCRIPT_PATH}.new"; then
-      # 验证新文件
-      if bash -n "${SCRIPT_PATH}.new" 2>/dev/null; then
-        mv "${SCRIPT_PATH}.new" "$SCRIPT_PATH"
-        chmod +x "$SCRIPT_PATH"
-        echo "✅ 脚本更新成功！"
-        echo "🔄 请重新运行脚本以使用新版本"
-        echo ""
-        echo "新版本信息:"
-        grep "^# .*v[0-9]" "$SCRIPT_PATH" | head -1 || echo "版本信息不可用"
-      else
-        rm "${SCRIPT_PATH}.new"
-        echo "❌ 新版本脚本语法错误，已恢复备份"
-        cp "$backup_file" "$SCRIPT_PATH"
-      fi
-    else
-      rm -f "${SCRIPT_PATH}.new"
-      echo "❌ 下载更新失败，请检查网络连接"
-    fi
-  else
-    echo "已取消更新"
+# ---------- BBR优化相关 ----------
+install_tcpx_bbr() {
+  clear
+  echo "=========================================="
+  echo "         TCPX BBR优化"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://github.000060000.xyz/tcpx.sh"
+  echo "此操作将从互联网下载并执行脚本，可能会修改系统网络配置。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
   fi
+  
+  set +e
+  wget -N --no-check-certificate "https://github.000060000.xyz/tcpx.sh" && chmod +x tcpx.sh && ./tcpx.sh
+  set -e
+  pause
+}
 
+install_bbr_optimize() {
+  clear
+  echo "=========================================="
+  echo "         BBR优化脚本"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://github.com/lanziii/bbr-/releases/download/123/tools.sh"
+  echo "此操作将从互联网下载并执行脚本，可能会修改系统网络配置。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -Ls https://github.com/lanziii/bbr-/releases/download/123/tools.sh)
+  set -e
+  pause
+}
+
+# ---------- 面板安装相关 ----------
+install_nezha() {
+  clear
+  echo "=========================================="
+  echo "         哪吒面板安装"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/nezhahq/scripts/refs/heads/main/install.sh"
+  echo "此操作将从互联网下载并执行哪吒面板官方安装脚本。"
+  read -rp "确定要安装哪吒面板吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  curl -L https://raw.githubusercontent.com/nezhahq/scripts/refs/heads/main/install.sh -o nezha.sh && chmod +x nezha.sh && sudo ./nezha.sh
+  set -e
+  pause
+}
+
+install_3xui() {
+  clear
+  echo "=========================================="
+  echo "         3x-ui面板安装"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh"
+  echo "此操作将从互联网下载并执行3x-ui面板安装脚本。"
+  read -rp "确定要安装3x-ui面板吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+  set -e
+  pause
+}
+
+install_hui() {
+  clear
+  echo "=========================================="
+  echo "         h-ui面板安装"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/jonssonyan/h-ui/main/install.sh"
+  echo "此操作将从互联网下载并执行h-ui面板安装脚本。"
+  read -rp "确定要安装h-ui面板吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -fsSL https://raw.githubusercontent.com/jonssonyan/h-ui/main/install.sh)
+  set -e
+  pause
+}
+
+install_sui() {
+  clear
+  echo "=========================================="
+  echo "         s-ui面板安装"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh"
+  echo "此操作将从互联网下载并执行s-ui面板安装脚本。"
+  read -rp "确定要安装s-ui面板吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+  set -e
+  pause
+}
+
+install_mcsmanager() {
+  clear
+  echo "=========================================="
+  echo "       MCSManager面板安装"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://script.mcsmanager.com/setup_cn.sh"
+  echo "此操作将从互联网下载并执行MCSManager面板安装脚本。"
+  read -rp "确定要安装MCSManager面板吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  sudo su -c "wget -qO- https://script.mcsmanager.com/setup_cn.sh | bash"
+  set -e
+  pause
+}
+
+# ---------- 网络测试相关 ----------
+test_besttrace() {
+  clear
+  echo "=========================================="
+  echo "         三网回程延迟测试"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://git.io/besttrace"
+  echo "此操作将从互联网下载并执行网络测试脚本。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  wget -qO- git.io/besttrace | bash
+  set -e
+  pause
+}
+
+test_mtr_trace() {
+  clear
+  echo "=========================================="
+  echo "         三网回程线路测试"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/zhucaidan/mtr_trace/main/mtr_trace.sh"
+  echo "此操作将从互联网下载并执行网络测试脚本。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  curl https://raw.githubusercontent.com/zhucaidan/mtr_trace/main/mtr_trace.sh|bash
+  set -e
+  pause
+}
+
+test_superspeed() {
+  clear
+  echo "=========================================="
+  echo "         三网测速脚本"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://git.io/superspeed_uxh"
+  echo "此操作将从互联网下载并执行网络测速脚本。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -Lso- https://git.io/superspeed_uxh)
+  set -e
+  pause
+}
+
+test_ip_quality() {
+  clear
+  echo "=========================================="
+  echo "         IP质量检测"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: IP.Check.Place"
+  echo "此操作将从互联网下载并执行IP检测脚本。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -Ls IP.Check.Place)
+  set -e
+  pause
+}
+
+# ---------- 系统工具相关 ----------
+install_rclone() {
+  clear
+  echo "=========================================="
+  echo "         安装Rclone"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://rclone.org/install.sh"
+  echo "此操作将从互联网下载并执行Rclone官方安装脚本。"
+  read -rp "确定要安装Rclone吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  curl https://rclone.org/install.sh | sudo bash
+  set -e
+  pause
+}
+
+install_natcfg() {
+  clear
+  echo "=========================================="
+  echo "         端口转发工具"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将执行远程脚本"
+  echo "脚本来源: https://raw.githubusercontent.com/arloor/iptablesUtils/master/natcfg.sh"
+  echo "此操作将从互联网下载并执行端口转发配置脚本。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  bash <(curl -fsSL https://us.arloor.dev/https://raw.githubusercontent.com/arloor/iptablesUtils/master/natcfg.sh)
+  set -e
+  pause
+}
+
+install_nfs_client() {
+  clear
+  echo "=========================================="
+  echo "         安装NFS客户端"
+  echo "=========================================="
+  
+  if command -v apt-get &> /dev/null; then
+    echo "检测到apt包管理器，使用apt安装..."
+    apt-get update && apt-get install nfs-common nfs-kernel-server -y
+  elif command -v yum &> /dev/null; then
+    echo "检测到yum包管理器，使用yum安装..."
+    yum install nfs-utils -y
+  else
+    error "未检测到支持的包管理器"
+    pause
+    return
+  fi
+  
+  ok "NFS客户端安装完成"
+  pause
+}
+
+show_directory_usage() {
+  clear
+  echo "=========================================="
+  echo "         查看目录占用"
+  echo "=========================================="
+  echo "1) 查看根目录占用（排除/mnt、/proc、/sys、/run）"
+  echo "2) 查看/opt目录占用"
+  read -rp "请选择: " choice
+  
+  case "$choice" in
+    1)
+      echo "正在分析根目录占用..."
+      sudo du -xh --max-depth=1 --exclude=/mnt --exclude=/proc --exclude=/sys --exclude=/run / | sort -h
+      ;;
+    2)
+      echo "正在分析/opt目录占用..."
+      sudo du -h --max-depth=1 /opt | sort -h
+      ;;
+    *)
+      error "无效选项"
+      ;;
+  esac
+  pause
+}
+
+modify_swappiness() {
+  clear
+  echo "=========================================="
+  echo "         修改虚拟内存使用率"
+  echo "=========================================="
+  echo "当前虚拟内存使用率:"
+  cat /proc/sys/vm/swappiness
+        echo ""
+  read -rp "请输入新的使用率 (0-100，推荐1): " swappiness
+  
+  if [[ "$swappiness" =~ ^[0-9]+$ ]] && [ "$swappiness" -ge 0 ] && [ "$swappiness" -le 100 ]; then
+    sysctl -w vm.swappiness=$swappiness
+    echo "vm.swappiness=$swappiness" >> /etc/sysctl.conf
+    ok "虚拟内存使用率已设置为: $swappiness"
+    echo "当前值:"
+    cat /proc/sys/vm/swappiness
+  else
+    error "无效输入，请输入0-100之间的数字"
+  fi
+  pause
+}
+
+install_apt_tools() {
+  clear
+  echo "=========================================="
+  echo "         安装基础工具包（apt）"
+  echo "=========================================="
+  echo "正在安装: nano wget zip fuse3 tar curl sudo unzip nfs-common nfs-kernel-server libzbar0"
+  
+  apt-get update && apt update && apt-get install nano wget zip fuse3 tar curl sudo unzip nfs-common nfs-kernel-server libzbar0 -y
+  
+  ok "工具包安装完成"
+  pause
+}
+
+install_yum_tools() {
+  clear
+  echo "=========================================="
+  echo "         安装基础工具包（yum）"
+  echo "=========================================="
+  echo "正在安装: nano wget zip fuse3 tar unzip"
+  
+  yum install nano wget zip fuse3 tar unzip -y
+  
+  ok "工具包安装完成"
+  pause
+}
+
+disable_bt_ssl() {
+  clear
+  echo "=========================================="
+  echo "         关闭宝塔面板SSL"
+  echo "=========================================="
+  
+  if [ ! -f /www/server/panel/data/ssl.pl ]; then
+    warn "SSL配置文件不存在，可能SSL已关闭或未安装宝塔面板"
+  else
+    rm -f /www/server/panel/data/ssl.pl
+    /etc/init.d/bt restart
+    ok "宝塔面板SSL已关闭"
+  fi
+  pause
+}
+
+# ---------- 群辉工具相关 ----------
+synology_status() {
+  clear
+  echo "=========================================="
+  echo "         群辉查看状态"
+  echo "=========================================="
+  echo "查看磁盘队列深度:"
+  cat /sys/block/sd*/device/queue_depth 2>/dev/null || echo "无法读取磁盘队列深度"
+  echo ""
+  echo "查看RAID状态:"
+  cat /proc/mdstat
+  pause
+}
+
+synology_disk_temp() {
+  clear
+  echo "=========================================="
+  echo "         群辉查看硬盘温度"
+  echo "=========================================="
+  
+  for i in {1..15}; do
+    if [ -e /dev/sata$i ]; then
+      echo "硬盘 sata$i 温度:"
+      smartctl -a /dev/sata$i | grep -i temperature || echo "无法读取温度信息"
+      echo ""
+    fi
+  done
+  pause
+}
+
+synology_dir_permissions() {
+  clear
+  echo "=========================================="
+  echo "         群辉查看目录权限"
+  echo "=========================================="
+  
+  for vol in /volume1 /volume2 /volume3; do
+    if [ -d "$vol" ]; then
+      echo "目录 $vol 权限:"
+      ls -l "$vol"
+      echo ""
+    fi
+  done
+  pause
+}
+
+synology_change_root_pwd() {
+  clear
+  echo "=========================================="
+  echo "         群辉修改root密码"
+  echo "=========================================="
+  warn "此操作将修改群辉系统的root密码"
+  read -sp "请输入新密码: " new_pwd
+  echo ""
+  read -sp "请再次确认密码: " new_pwd2
+  echo ""
+  
+  if [ "$new_pwd" != "$new_pwd2" ]; then
+    error "两次输入的密码不一致"
+    pause
+    return
+  fi
+  
+  if [ -z "$new_pwd" ]; then
+    error "密码不能为空"
+    pause
+    return
+  fi
+  
+  synouser --setpw root "$new_pwd" 2>/dev/null && ok "root密码修改成功" || error "密码修改失败，请确认是否在群辉系统上运行"
+  pause
+}
+
+synology_set_stripe_32768() {
+  clear
+  echo "=========================================="
+  echo "         群辉改数据块（32768）"
+  echo "=========================================="
+  warn "此操作将修改RAID数据块大小，请谨慎操作"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  for md in md{0..8}; do
+    if [ -d /sys/block/$md/md ]; then
+      echo 32768 > /sys/block/$md/md/stripe_cache_size 2>/dev/null && echo "✅ $md 数据块已设置为32768" || echo "❌ $md 设置失败"
+    fi
+  done
+  pause
+}
+
+synology_set_stripe_4096() {
+  clear
+  echo "=========================================="
+  echo "         群辉恢复数据块（4096）"
+  echo "=========================================="
+  warn "此操作将恢复RAID数据块大小为默认值"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  for md in md{0..8}; do
+    if [ -d /sys/block/$md/md ]; then
+      echo 4096 > /sys/block/$md/md/stripe_cache_size 2>/dev/null && echo "✅ $md 数据块已恢复为4096" || echo "❌ $md 恢复失败"
+    fi
+  done
+  pause
+}
+
+synology_super_permission() {
+  clear
+  echo "=========================================="
+  echo "         群辉超级权限"
+  echo "=========================================="
+  warn "此操作将切换到root用户，请谨慎操作"
+  read -rp "确定要切换到root用户吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  sudo -i
+  pause
+}
+
+# ---------- PVE工具相关 ----------
+install_pve_source() {
+  clear
+  echo "=========================================="
+  echo "         PVE一键命令"
+  echo "=========================================="
+  warn "⚠️  安全警告: 即将下载并执行PVE源配置脚本"
+  echo "脚本来源: https://bbs.x86pi.cn/file/topic/2023-11-28/file/01ac88d7d2b840cb88c15cb5e19d4305b2.gz"
+  echo "此操作将从互联网下载并执行PVE配置脚本，可能会修改系统配置。"
+  read -rp "确定要继续吗? (y/N): " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  wget -q -O /root/pve_source.tar.gz 'https://bbs.x86pi.cn/file/topic/2023-11-28/file/01ac88d7d2b840cb88c15cb5e19d4305b2.gz' && tar zxvf /root/pve_source.tar.gz && /root/./pve_source
+  set -e
+  pause
+}
+
+enter_pve_images() {
+  clear
+  echo "=========================================="
+  echo "         进入PVE磁盘目录"
+  echo "=========================================="
+  echo "PVE磁盘目录: /var/lib/vz/images"
+  
+  if [ -d /var/lib/vz/images ]; then
+    cd /var/lib/vz/images
+    echo "✅ 已切换到 /var/lib/vz/images"
+    echo "当前目录内容:"
+    ls -lh
+  else
+    error "目录不存在，可能未安装PVE"
+  fi
+  pause
+}
+
+# ---------- 系统重装相关 ----------
+dd_reinstall() {
+  clear
+  echo "=========================================="
+  echo "         DD重装系统"
+  echo "=========================================="
+  warn "⚠️  危险操作警告"
+  echo "此操作将完全格式化当前系统并重新安装！"
+  echo "所有数据将被永久删除，无法恢复！"
+  echo ""
+  echo "脚本来源: https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh"
+  echo "默认系统: Debian 12"
+  echo "默认密码: Xiaorui0"
+  echo ""
+  read -rp "请输入 'YES' 确认继续: " confirm
+  
+  if [ "$confirm" != "YES" ]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  read -rp "请输入系统版本 (默认: debian 12): " os_version
+  os_version=${os_version:-"debian 12"}
+  
+  read -rp "请输入root密码 (默认: Xiaorui0): " root_pwd
+  root_pwd=${root_pwd:-"Xiaorui0"}
+  
+  warn "最后确认：即将格式化系统并安装 $os_version，root密码: $root_pwd"
+  read -rp "输入 'CONFIRM' 最终确认: " final_confirm
+  
+  if [ "$final_confirm" != "CONFIRM" ]; then
+    info "操作已取消"
+    pause
+    return
+  fi
+  
+  set +e
+  curl -O https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh || wget -O reinstall.sh https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh
+  bash reinstall.sh $os_version --password "$root_pwd"
+  set -e
   pause
 }
 
