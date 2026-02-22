@@ -1,6 +1,6 @@
 #!/bin/bash
 #==============================================
-# 田小瑞一键脚本 v1.0.2
+# 田小瑞一键脚本 v1.0.3
 #==============================================
 #
 # 一键运行命令:
@@ -174,7 +174,7 @@ print_divider() {
 }
 
 # ---------- 常量定义 ----------
-readonly SCRIPT_VERSION="v1.0.2"
+readonly SCRIPT_VERSION="v1.0.3"
 readonly GITHUB_RAW_URL="https://raw.githubusercontent.com"
 readonly QB_STATIC_REPO="userdocs/qbittorrent-nox-static"
 
@@ -191,6 +191,7 @@ manage_swap_menu() {
     print_option "6" "删除虚拟内存"
     print_option "7" "开机自动挂载设置"
     print_option "8" "自定义添加虚拟内存"
+    print_option "9" "Swappiness 设定"
     print_separator
     echo -e "  ${BOLD_RED}0)${NC} ${RED}返回主菜单${NC}"
     print_separator
@@ -257,6 +258,7 @@ manage_swap_menu() {
         else
           add_swap "$custom_size"
         fi ;;
+      9) manage_swappiness ;;
       0) return ;;
       *) warn "无效选项"; sleep 1 ;;
     esac
@@ -311,6 +313,146 @@ if ! fallocate -l "$size" /swapfile 2>/dev/null; then
   fi
   ok "已成功添加 ${size} 虚拟内存并启用"
   pause
+}
+
+# ---------- Swappiness 管理函数 ----------
+manage_swappiness() {
+  clear
+  print_menu_header "Swappiness 设定"
+  
+  # 获取当前 swappiness 值
+  local current_swappiness
+  current_swappiness=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "60")
+  
+  echo ""
+  info "当前 Swappiness 值: ${BOLD_GREEN}${current_swappiness}${NC}"
+  echo ""
+  print_section "Swappiness 说明"
+  echo -e "  ${CYAN}Swappiness${NC} 是 Linux 内核参数，控制系统使用 swap 空间的倾向性"
+  echo -e "  ${CYAN}取值范围${NC}: 0-100"
+  echo -e "  ${CYAN}0${NC}   - 尽可能不使用 swap（优先使用物理内存）"
+  echo -e "  ${CYAN}1-10${NC} - 低优先级使用 swap（推荐用于服务器）"
+  echo -e "  ${CYAN}60${NC}  - 默认值（平衡使用）"
+  echo -e "  ${CYAN}100${NC} - 尽可能使用 swap（不推荐）"
+  echo ""
+  print_separator
+  
+  print_option "1" "查看当前 Swappiness 值"
+  print_option "2" "修改 Swappiness 值"
+  print_option "3" "设置为推荐值 (1 - 适合服务器)"
+  print_option "4" "设置为默认值 (60)"
+  print_option "5" "设置为最小值 (0 - 禁用 swap 优先)"
+  print_separator
+  echo -e "  ${BOLD_RED}0)${NC} ${RED}返回${NC}"
+  print_separator
+  echo -ne "${BOLD_MAGENTA}请选择: ${NC}"
+  read -r opt
+  
+  case "$opt" in
+    1)
+      echo ""
+      info "当前 Swappiness 值: ${BOLD_GREEN}${current_swappiness}${NC}"
+      if [ -f /etc/sysctl.conf ]; then
+        if grep -q "vm.swappiness" /etc/sysctl.conf; then
+          echo ""
+          info "配置文件中的设置:"
+          grep "vm.swappiness" /etc/sysctl.conf
+        else
+          warn "未在 /etc/sysctl.conf 中找到永久配置"
+        fi
+      fi
+      echo ""
+      pause
+      ;;
+    2)
+      echo ""
+      question "请输入新的 Swappiness 值 (0-100): "
+      read -r new_value
+      
+      if [[ "$new_value" =~ ^[0-9]+$ ]] && [ "$new_value" -ge 0 ] && [ "$new_value" -le 100 ]; then
+        # 临时设置（立即生效）
+        if sysctl -w vm.swappiness="$new_value" >/dev/null 2>&1; then
+          ok "Swappiness 已临时设置为: ${new_value}"
+          
+          # 永久设置（写入配置文件）
+          if [ -f /etc/sysctl.conf ]; then
+            # 删除旧配置（如果存在）
+            sed -i '/^vm\.swappiness=/d' /etc/sysctl.conf
+            # 添加新配置
+            echo "vm.swappiness=$new_value" >> /etc/sysctl.conf
+            ok "已写入 /etc/sysctl.conf，重启后仍有效"
+          else
+            warn "无法写入 /etc/sysctl.conf"
+          fi
+          
+          echo ""
+          info "当前值: $(cat /proc/sys/vm/swappiness)"
+        else
+          error "设置失败，请检查权限"
+        fi
+      else
+        error "无效输入，请输入 0-100 之间的数字"
+      fi
+      echo ""
+      pause
+      ;;
+    3)
+      echo ""
+      info "正在设置为推荐值 1（适合服务器环境）..."
+      if sysctl -w vm.swappiness=1 >/dev/null 2>&1; then
+        if [ -f /etc/sysctl.conf ]; then
+          sed -i '/^vm\.swappiness=/d' /etc/sysctl.conf
+          echo "vm.swappiness=1" >> /etc/sysctl.conf
+        fi
+        ok "Swappiness 已设置为 1（推荐值）"
+        info "当前值: $(cat /proc/sys/vm/swappiness)"
+      else
+        error "设置失败"
+      fi
+      echo ""
+      pause
+      ;;
+    4)
+      echo ""
+      info "正在设置为默认值 60..."
+      if sysctl -w vm.swappiness=60 >/dev/null 2>&1; then
+        if [ -f /etc/sysctl.conf ]; then
+          sed -i '/^vm\.swappiness=/d' /etc/sysctl.conf
+          echo "vm.swappiness=60" >> /etc/sysctl.conf
+        fi
+        ok "Swappiness 已设置为 60（默认值）"
+        info "当前值: $(cat /proc/sys/vm/swappiness)"
+      else
+        error "设置失败"
+      fi
+      echo ""
+      pause
+      ;;
+    5)
+      echo ""
+      warn "设置为 0 将尽可能不使用 swap，可能导致内存不足时系统不稳定"
+      question "确认设置为 0? [y/N]: "
+      read -r confirm
+      if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        if sysctl -w vm.swappiness=0 >/dev/null 2>&1; then
+          if [ -f /etc/sysctl.conf ]; then
+            sed -i '/^vm\.swappiness=/d' /etc/sysctl.conf
+            echo "vm.swappiness=0" >> /etc/sysctl.conf
+          fi
+          ok "Swappiness 已设置为 0"
+          info "当前值: $(cat /proc/sys/vm/swappiness)"
+        else
+          error "设置失败"
+        fi
+      else
+        info "已取消"
+      fi
+      echo ""
+      pause
+      ;;
+    0) return ;;
+    *) warn "无效选项"; sleep 1 ;;
+  esac
 }
 
 # ---------- 通用镜像源管理 ----------
