@@ -1,6 +1,9 @@
-# 田小瑞一键脚本 v1.0.2
+# 田小瑞一键脚本 v1.0.3
 
-一个功能强大的 Linux 服务器管理脚本，提供系统优化、应用安装、网络诊断、安全配置等一站式服务。
+> 一个功能强大的 Linux 服务器管理脚本，提供系统优化、应用安装、网络诊断、安全配置等一站式服务。
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Shell Script](https://img.shields.io/badge/Shell-Bash-blue.svg)](https://www.gnu.org/software/bash/)
 
 ## ✨ 特性
 
@@ -13,7 +16,7 @@
 ## 📋 功能列表
 
 ### 系统优化
-- ✅ 虚拟内存管理（添加/删除/自动挂载）
+- ✅ 虚拟内存管理（添加/删除/自动挂载/Swappiness 设定）
 - ✅ 镜像源管理（支持 Debian/Ubuntu/CentOS/Rocky/AlmaLinux）
 - ✅ BBR 网络优化
 
@@ -134,7 +137,7 @@ sudo ./txrui.sh
 
 ### 虚拟内存管理
 
-支持快速添加 1G/2G/4G/8G 虚拟内存，或自定义大小。可设置开机自动挂载。
+支持快速添加 1G/2G/4G/8G 虚拟内存，或自定义大小。可设置开机自动挂载，支持 Swappiness 参数调整。
 
 ### 镜像源管理
 
@@ -178,14 +181,27 @@ sudo ./txrui.sh
 4. **系统兼容性**: 建议在干净的系统中使用，避免与现有配置冲突
 5. **安全警告**: 某些操作会修改系统网络配置，请谨慎操作
 
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+- 提交 Bug: [Issues](https://github.com/txrui/script/issues)
+- 功能建议: [Issues](https://github.com/txrui/script/issues)
+- 代码贡献: [Pull Requests](https://github.com/txrui/script/pulls)
+
 ## 🐛 问题反馈
 
 如果遇到问题或有功能建议，请通过以下方式反馈：
 
-- GitHub Issues: [提交 Issue](https://github.com/txrui/script/issues)
-- 脚本版本: v1.0.2
+- **GitHub Issues**: [提交 Issue](https://github.com/txrui/script/issues)
+- **脚本版本**: v1.0.3
 
 ## 📝 更新日志
+
+### v1.0.3
+- 新增虚拟内存 Swappiness 设定功能
+- 优化虚拟内存管理菜单
+- 改进用户体验和错误处理
 
 ### v1.0.2
 - 更新版本号
@@ -198,7 +214,7 @@ sudo ./txrui.sh
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证。详见 LICENSE 文件。
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
 
 ## 🙏 致谢
 
@@ -207,3 +223,5 @@ sudo ./txrui.sh
 ---
 
 **提示**: 使用前请仔细阅读说明，确保了解每个功能的作用和影响。
+
+**⭐ 如果这个项目对你有帮助，请给个 Star 支持一下！**
